@@ -4,6 +4,7 @@ import JsonTreeNode from './components/JsonTreeNode.vue';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const weightingTableConfig = import.meta.env.VITE_SCALE_WEIGHTING_TABLE || '';
+const loginStorageKey = 'rogainizer-login-token';
 
 function parseWeightingTable(rawTable) {
   const defaultTable = [
@@ -123,6 +124,13 @@ const editLeaderBoardYearResults = ref([]);
 const editLeaderBoardYearResultsLoading = ref(false);
 const editLeaderBoardYearResultsErrorMessage = ref('');
 const selectedEditLeaderBoardResultIds = ref([]);
+const isLoggedIn = ref(false);
+const authToken = ref('');
+const showLoginDialog = ref(false);
+const loginUsernameInput = ref('');
+const loginPasswordInput = ref('');
+const loginErrorMessage = ref('');
+const loginSubmitting = ref(false);
 
 const filteredEventSeries = computed(() => {
   const targetYear = String(selectedEventYear.value || '').trim();
@@ -539,6 +547,11 @@ async function openLeaderBoardMemberDialog(row) {
 }
 
 function switchView(view) {
+  if (view === 'json-loader' && !isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
   currentView.value = view;
 
   if (view === 'leader-boards') {
@@ -548,6 +561,102 @@ function switchView(view) {
   if (view === 'results') {
     fetchResultsEvents();
   }
+}
+
+function openLoginDialog() {
+  loginErrorMessage.value = '';
+  loginUsernameInput.value = '';
+  loginPasswordInput.value = '';
+  showLoginDialog.value = true;
+}
+
+function closeLoginDialog() {
+  showLoginDialog.value = false;
+  loginErrorMessage.value = '';
+}
+
+async function submitLogin() {
+  if (loginSubmitting.value) {
+    return;
+  }
+
+  const username = String(loginUsernameInput.value || '').trim();
+  const password = String(loginPasswordInput.value || '');
+
+  if (!username || !password) {
+    loginErrorMessage.value = 'Username and password are required.';
+    return;
+  }
+
+  loginSubmitting.value = true;
+  loginErrorMessage.value = '';
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || 'Invalid username or password.');
+    }
+
+    const data = await response.json();
+    const token = String(data?.token || '').trim();
+    if (!token) {
+      throw new Error('Login succeeded but token was missing.');
+    }
+
+    authToken.value = token;
+    isLoggedIn.value = true;
+    sessionStorage.setItem(loginStorageKey, token);
+    closeLoginDialog();
+  } catch (error) {
+    loginErrorMessage.value = error.message || 'Login failed.';
+  } finally {
+    loginSubmitting.value = false;
+  }
+}
+
+function logout() {
+  authToken.value = '';
+  isLoggedIn.value = false;
+  sessionStorage.removeItem(loginStorageKey);
+  if (currentView.value === 'json-loader') {
+    currentView.value = 'leader-boards';
+  }
+}
+
+function buildAuthHeaders(extraHeaders = {}) {
+  return {
+    ...extraHeaders,
+    Authorization: `Bearer ${authToken.value}`
+  };
+}
+
+async function fetchWithAuth(url, options = {}) {
+  if (!authToken.value) {
+    logout();
+    openLoginDialog();
+    throw new Error('Login required.');
+  }
+
+  const headers = buildAuthHeaders(options.headers || {});
+  const response = await fetch(url, {
+    ...options,
+    headers
+  });
+
+  if (response.status === 401) {
+    logout();
+    openLoginDialog();
+  }
+
+  return response;
 }
 
 function formatResultCell(row, column) {
@@ -680,6 +789,11 @@ async function loadSelectedEventResults() {
 }
 
 function openEditResultDialog(row) {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
   const resultId = Number(row?.id);
   if (!Number.isInteger(resultId) || resultId <= 0) {
     return;
@@ -727,7 +841,7 @@ async function saveEditedResultRow() {
   editResultLoading.value = true;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/events/${eventId}/results/${resultId}`, {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/events/${eventId}/results/${resultId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -750,6 +864,11 @@ async function saveEditedResultRow() {
 }
 
 async function deleteResultRow(row) {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
   const eventId = Number(selectedResultsEventId.value);
   const resultId = Number(row?.id);
 
@@ -765,7 +884,7 @@ async function deleteResultRow(row) {
   eventResultsErrorMessage.value = '';
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/events/${eventId}/results/${resultId}`, {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/events/${eventId}/results/${resultId}`, {
       method: 'DELETE'
     });
 
@@ -908,6 +1027,11 @@ function closeCreateLeaderBoardDialog() {
 }
 
 async function openEditLeaderBoardDialog(leaderBoard) {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
   const leaderBoardId = Number(leaderBoard?.id);
   if (!Number.isInteger(leaderBoardId) || leaderBoardId <= 0) {
     return;
@@ -1033,7 +1157,7 @@ async function updateLeaderBoard() {
   editLeaderBoardLoading.value = true;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/leader-boards/${leaderBoardId}`, {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/leader-boards/${leaderBoardId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -1460,7 +1584,7 @@ async function saveSelectedEvent(overwrite = false) {
   saveEventLoading.value = true;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/events/save-result`, {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/events/save-result`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1533,7 +1657,7 @@ async function saveTransformedResults() {
   saveTransformedLoading.value = true;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/events/${savedEventId.value}/transformed-results`, {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/events/${savedEventId.value}/transformed-results`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1600,24 +1724,67 @@ async function loadSelectedEventJson() {
 }
 
 onMounted(() => {
+  const storedToken = String(sessionStorage.getItem(loginStorageKey) || '').trim();
+  if (storedToken) {
+    authToken.value = storedToken;
+    isLoggedIn.value = true;
+
+    fetch(`${apiBaseUrl}/api/auth/validate`, {
+      headers: buildAuthHeaders()
+    })
+      .then((response) => {
+        if (!response.ok) {
+          logout();
+        }
+      })
+      .catch(() => {
+        logout();
+      });
+  }
+
   fetchEventsIndex();
   fetchLeaderBoards();
 });
 </script>
 
 <template>
-  <main>
-    <h1>Rogainizer</h1>
+  <main class="mx-auto my-8 max-w-[1240px] px-4 font-sans text-slate-800 lg:px-6">
+    <header class="page-header rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <h1 class="mb-1 text-3xl font-bold tracking-tight text-slate-900">Rogainizer</h1>
+      <p class="page-subtitle m-0 text-sm text-slate-600">Manage results ingestion, transformed scoring, and leader board views from one place.</p>
 
-    <div class="view-switcher">
-      <button type="button" :class="{ active: currentView === 'leader-boards' }" @click="switchView('leader-boards')">Leader Boards</button>
-      <button type="button" :class="{ active: currentView === 'results' }" @click="switchView('results')">Results</button>
-      <button type="button" :class="{ active: currentView === 'json-loader' }" @click="switchView('json-loader')">Results Loader</button>
+      <div class="mt-3 flex items-center justify-end gap-2">
+        <span v-if="isLoggedIn" class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">Logged in</span>
+        <button v-if="!isLoggedIn" type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openLoginDialog">Login</button>
+        <button v-else type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="logout">Logout</button>
+      </div>
+    </header>
+
+    <div class="view-switcher my-3 mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+      <button
+        type="button"
+        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+        :class="{ active: currentView === 'leader-boards', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'leader-boards' }"
+        @click="switchView('leader-boards')"
+      >Leader Boards</button>
+      <button
+        type="button"
+        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+        :class="{ active: currentView === 'results', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'results' }"
+        @click="switchView('results')"
+      >Results</button>
+      <button
+        v-if="isLoggedIn"
+        type="button"
+        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+        :class="{ active: currentView === 'json-loader', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'json-loader' }"
+        @click="switchView('json-loader')"
+      >Results Loader</button>
     </div>
 
-    <section v-if="currentView === 'json-loader'" class="json-loader-section">
-        <h2>Load Results</h2>
-        <p class="json-loader-subtitle">Select year, event series, and event, then click Load to retrieve results.</p>
+    <section v-if="currentView === 'json-loader' && isLoggedIn" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
+        <h2 class="mb-2 text-xl font-semibold text-slate-900">Load Results</h2>
+        <p class="json-loader-subtitle mt-0 text-sm text-slate-600">Select year, event series, and event, then click Load to retrieve results.</p>
         <div class="json-loader-controls">
           <label>
             Year
@@ -1644,16 +1811,18 @@ onMounted(() => {
         </div>
         <p v-if="eventsIndexLoading">Loading events index...</p>
         <p v-if="eventsIndexErrorMessage" class="error">{{ eventsIndexErrorMessage }}</p>
-        <button type="button" @click="loadSelectedEventJson" :disabled="jsonLoadLoading || !selectedEventResultsUrl">
-          {{ jsonLoadLoading ? 'Loading...' : 'Load' }}
-        </button>
-        <button type="button" @click="saveSelectedEvent()" :disabled="saveEventLoading || jsonLoadData === null">
-          {{ saveEventLoading ? 'Saving...' : 'Save Event' }}
-        </button>
+        <div class="action-row mb-2 mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500" @click="loadSelectedEventJson" :disabled="jsonLoadLoading || !selectedEventResultsUrl">
+            {{ jsonLoadLoading ? 'Loading...' : 'Load' }}
+          </button>
+          <button type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500" @click="saveSelectedEvent()" :disabled="saveEventLoading || jsonLoadData === null">
+            {{ saveEventLoading ? 'Saving...' : 'Save Event' }}
+          </button>
+          <button type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500" @click="openCategoryMappingDialog" :disabled="jsonLoadLoading || jsonLoadData === null">
+            Transform
+          </button>
+        </div>
         <p v-if="selectedEventResultsUrl" class="json-loader-url">{{ selectedEventResultsUrl }}</p>
-        <button type="button" @click="openCategoryMappingDialog" :disabled="jsonLoadLoading || jsonLoadData === null">
-          Transform
-        </button>
         <p v-if="jsonLoadErrorMessage" class="error">{{ jsonLoadErrorMessage }}</p>
         <p v-if="saveEventErrorMessage" class="error">{{ saveEventErrorMessage }}</p>
         <p v-if="saveEventSuccessMessage" class="success">{{ saveEventSuccessMessage }}</p>
@@ -1707,8 +1876,16 @@ onMounted(() => {
         </div>
     </section>
 
-    <section v-else-if="currentView === 'results'" class="json-loader-section">
-      <h2>Results</h2>
+    <section v-else-if="currentView === 'json-loader'" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
+      <h2 class="mb-2 text-xl font-semibold text-slate-900">Results Loader</h2>
+      <p class="empty-state">Login is required to access Results Loader.</p>
+      <div class="mt-3">
+        <button type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700" @click="openLoginDialog">Login</button>
+      </div>
+    </section>
+
+    <section v-else-if="currentView === 'results'" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
+      <h2 class="mb-2 text-xl font-semibold text-slate-900">Results</h2>
       <div class="json-loader-controls">
         <label>
           Event
@@ -1742,11 +1919,11 @@ onMounted(() => {
       <p v-if="eventResultsLoading">Loading results...</p>
       <p v-if="eventResultsErrorMessage" class="error">{{ eventResultsErrorMessage }}</p>
 
-      <table v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" class="events-table transformed-table">
+      <table v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" class="events-table transformed-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
         <thead>
           <tr>
             <th v-for="column in eventResultsColumns" :key="`event-results-header-${column}`">{{ transformedColumnLabel(column) }}</th>
-            <th>Actions</th>
+            <th v-if="isLoggedIn">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1761,9 +1938,9 @@ onMounted(() => {
             >
               {{ formatResultCell(row, column) }}
             </td>
-            <td>
-              <button type="button" @click="openEditResultDialog(row)">Edit</button>
-              <button type="button" @click="deleteResultRow(row)">Delete</button>
+            <td v-if="isLoggedIn" class="action-cell whitespace-nowrap">
+              <button type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditResultDialog(row)">Edit</button>
+              <button type="button" class="action-button danger-button rounded-md border border-red-600 bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700" @click="deleteResultRow(row)">Delete</button>
             </td>
           </tr>
         </tbody>
@@ -1794,14 +1971,14 @@ onMounted(() => {
       </div>
     </div>
 
-    <section v-else-if="currentView === 'leader-boards'" class="json-loader-section">
+    <section v-else-if="currentView === 'leader-boards'" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
       <p v-if="createLeaderBoardSuccessMessage" class="success">{{ createLeaderBoardSuccessMessage }}</p>
       <p v-if="leaderBoardsErrorMessage" class="error">{{ leaderBoardsErrorMessage }}</p>
       <p v-if="leaderBoardsLoading">Loading leader boards...</p>
 
       <div class="leader-boards-layout">
         <div class="json-output-panel">
-          <table v-if="!leaderBoardsLoading" class="events-table">
+          <table v-if="!leaderBoardsLoading" class="events-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
             <thead>
               <tr>
                 <th>Name</th>
@@ -1815,9 +1992,9 @@ onMounted(() => {
                 <td>{{ leaderBoard.name }}</td>
                 <td>{{ leaderBoard.year }}</td>
                 <td>{{ leaderBoard.eventCount }}</td>
-                <td>
-                  <button type="button" @click="openEditLeaderBoardDialog(leaderBoard)">Edit</button>
-                  <button type="button" @click="createLeaderBoardScoreView(leaderBoard)">View</button>
+                <td class="action-cell whitespace-nowrap">
+                  <button v-if="isLoggedIn" type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditLeaderBoardDialog(leaderBoard)">Edit</button>
+                  <button type="button" class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="createLeaderBoardScoreView(leaderBoard)">View</button>
                 </td>
               </tr>
               <tr v-if="leaderBoards.length === 0">
@@ -2015,6 +2192,27 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="showLoginDialog" class="dialog-backdrop">
+      <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Login">
+        <h3>Login</h3>
+        <div class="json-loader-controls">
+          <label>
+            Username
+            <input v-model="loginUsernameInput" type="text" placeholder="Username" />
+          </label>
+          <label>
+            Password
+            <input v-model="loginPasswordInput" type="password" placeholder="Password" @keyup.enter="submitLogin" />
+          </label>
+        </div>
+        <p v-if="loginErrorMessage" class="error">{{ loginErrorMessage }}</p>
+        <div class="mapping-dialog-actions">
+          <button type="button" @click="closeLoginDialog">Cancel</button>
+          <button type="button" @click="submitLogin" :disabled="loginSubmitting">{{ loginSubmitting ? 'Logging in...' : 'Login' }}</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showCategoryMappingDialog" class="dialog-backdrop">
       <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Category mapping">
         <h3>Category Mapping</h3>
@@ -2054,213 +2252,206 @@ onMounted(() => {
 
 <style scoped>
 main {
-  max-width: 920px;
-  margin: 3rem auto;
-  padding: 0 1rem;
-  font-family: Inter, system-ui, Arial, sans-serif;
+  @apply mx-auto my-8 max-w-[1680px] px-4 font-sans text-slate-800 lg:px-6;
+}
+
+.page-header {
+  @apply rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm;
+}
+
+h1 {
+  @apply mb-1 text-3xl font-bold tracking-tight text-slate-900;
+}
+
+.page-subtitle {
+  @apply m-0 text-sm text-slate-600;
+}
+
+h2 {
+  @apply mb-2 text-xl font-semibold text-slate-900;
+}
+
+h3 {
+  @apply mb-2 text-lg font-semibold text-slate-900;
 }
 
 input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem;
+  @apply box-border w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200;
 }
 
 select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem;
+  @apply box-border w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200;
 }
 
 button {
-  padding: 0.5rem 0.8rem;
-  cursor: pointer;
+  @apply cursor-pointer rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500;
 }
 
 .view-switcher {
-  display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0 1.25rem;
+  @apply my-3 mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm;
+}
+
+.tab-button {
+  @apply border-transparent bg-transparent text-slate-700 shadow-none hover:bg-slate-100;
 }
 
 .view-switcher .active {
-  font-weight: 700;
+  @apply border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm;
+}
+
+.action-row {
+  @apply mb-2 mt-3 flex flex-wrap items-center gap-2;
+}
+
+.action-cell {
+  @apply whitespace-nowrap;
+}
+
+.action-button {
+  @apply mr-1 px-2 py-1 text-[11px] leading-4;
+}
+
+.action-button:last-child {
+  @apply mr-0;
+}
+
+.danger-button {
+  @apply border-red-600 bg-red-600 hover:border-red-700 hover:bg-red-700 focus:ring-red-300;
 }
 
 .events-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0;
+  @apply my-2 w-full border-collapse overflow-hidden rounded-md bg-white;
 }
 
 .events-table th,
 .events-table td {
-  border: 1px solid #ddd;
-  padding: 0.6rem;
-  text-align: left;
+  @apply border border-slate-200 px-2 py-1 text-left text-xs leading-4;
+}
+
+.events-table th {
+  @apply sticky top-0 bg-slate-100 font-semibold uppercase tracking-wide text-slate-600;
+}
+
+.events-table tbody tr:nth-child(even) {
+  @apply bg-slate-50/60;
+}
+
+.events-table tbody tr:hover {
+  @apply bg-indigo-50/40;
 }
 
 .events-table th.sortable-header {
-  cursor: pointer;
-  user-select: none;
+  @apply cursor-pointer select-none;
 }
 
 .error {
-  color: #b00020;
+  @apply my-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700;
 }
 
 .success {
-  color: #0b6e2e;
+  @apply my-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700;
 }
 
 .empty-state {
-  text-align: center;
+  @apply rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-600;
 }
 
 .json-loader-section {
-  margin-top: 1rem;
-  text-align: left;
+  @apply mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm;
 }
 
 .json-loader-subtitle {
-  margin-top: 0;
+  @apply mt-0 text-sm text-slate-600;
 }
 
 .json-loader-controls {
-  display: grid;
-  gap: 0.75rem;
+  @apply my-2 mb-4 grid gap-3;
   grid-template-columns: repeat(auto-fit, minmax(220px, 280px));
-  margin: 0.5rem 0 1rem;
 }
 
 .json-loader-controls label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  @apply flex flex-col gap-1 text-sm font-medium text-slate-700;
 }
 
 .json-loader-url {
-  margin: 0.5rem 0;
-  word-break: break-all;
+  @apply my-2 rounded bg-slate-100 px-2 py-1 break-all text-xs text-slate-600;
 }
 
 .transformed-mode-switch {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
+  @apply mb-2 flex flex-wrap items-center gap-4 rounded-md bg-slate-50 px-3 py-2;
 }
 
 .transformed-mode-switch label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+  @apply inline-flex items-center gap-1 text-sm font-medium text-slate-700;
 }
 
 .events-table td.scaled-score-cell {
-  text-align: right;
+  @apply text-right;
 }
 
 .events-table td.member-cell {
-  cursor: pointer;
-  text-decoration: underline;
+  @apply cursor-pointer font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2;
 }
 
 .events-table td.result-member-warning {
-  color: #b00020;
-  font-weight: 600;
+  @apply font-semibold text-red-700;
 }
 
 .dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  z-index: 1000;
+  @apply fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[1px];
 }
 
 .mapping-dialog {
-  background: #fff;
-  color: #111;
-  border-radius: 8px;
-  border: 1px solid #ddd;
-  padding: 1rem;
+  @apply max-h-[90vh] overflow-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl;
   width: min(760px, 100%);
-  max-height: 90vh;
-  overflow: auto;
 }
 
 .mapping-table {
-  margin: 0.75rem 0;
+  @apply my-2;
 }
 
 .mapping-dialog-actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: flex-end;
+  @apply flex items-center justify-end gap-2;
 }
 
 .mapping-dialog-error {
-  margin-right: auto;
+  @apply mr-auto border-none bg-transparent p-0;
 }
 
 .json-output-panel {
-  margin-top: 1rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 0.75rem;
-  min-width: 0;
+  @apply mt-4 min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm;
 }
 
 .json-output-panel h3 {
-  margin-top: 0;
+  @apply mt-0;
 }
 
 .json-panels {
-  display: grid;
-  gap: 1rem;
+  @apply grid w-full items-start gap-4;
   grid-template-columns: 1fr;
-  align-items: start;
-  width: 100%;
 }
 
 .leader-boards-layout {
-  display: grid;
-  gap: 1rem;
+  @apply grid w-full items-start gap-4;
   grid-template-columns: 1fr;
-  align-items: start;
-  width: 100%;
 }
 
 .transformed-table {
-  margin-top: 0;
+  @apply mt-0;
   width: max-content;
 }
 
 .transformed-output-panel {
-  width: 100%;
-  min-width: 0;
-  overflow-x: auto;
+  @apply w-full min-w-0 overflow-x-auto;
 }
 
 @media (min-width: 1024px) {
-  .json-loader-section {
-    width: 100vw;
-    margin-left: calc(50% - 50vw);
-    padding: 0 1rem;
-    box-sizing: border-box;
-  }
-
   .json-panels {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
 
   .leader-boards-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 3.2fr);
   }
 }
 </style>

@@ -6,7 +6,8 @@
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "dev:api": "npm run dev --prefix backend",
     "dev:web": "npm run dev --prefix frontend",
-    "db:init": "npm run db:init --prefix backend"
+    "db:init": "npm run db:init --prefix backend",
+    "docker:web:deps": "docker compose run --rm web npm install"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

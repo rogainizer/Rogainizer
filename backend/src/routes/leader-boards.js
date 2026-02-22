@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../config/db.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -52,7 +53,7 @@ router.get('/details/:leaderBoardId', async (req, res) => {
   }
 });
 
-router.put('/:leaderBoardId', async (req, res) => {
+router.put('/:leaderBoardId', requireAuth, async (req, res) => {
   const leaderBoardId = Number(req.params.leaderBoardId);
   const name = String(req.body?.name || '').trim();
   const year = Number(req.body?.year);

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../config/db.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -105,7 +106,7 @@ router.get('/:eventId/results', async (req, res) => {
   }
 });
 
-router.put('/:eventId/results/:resultId', async (req, res) => {
+router.put('/:eventId/results/:resultId', requireAuth, async (req, res) => {
   const eventId = Number(req.params.eventId);
   const resultId = Number(req.params.resultId);
   const teamName = String(req.body?.team_name || '').trim();
@@ -150,7 +151,7 @@ router.put('/:eventId/results/:resultId', async (req, res) => {
   }
 });
 
-router.delete('/:eventId/results/:resultId', async (req, res) => {
+router.delete('/:eventId/results/:resultId', requireAuth, async (req, res) => {
   const eventId = Number(req.params.eventId);
   const resultId = Number(req.params.resultId);
 
@@ -186,7 +187,7 @@ router.delete('/:eventId/results/:resultId', async (req, res) => {
   }
 });
 
-router.post('/save-result', async (req, res) => {
+router.post('/save-result', requireAuth, async (req, res) => {
   const {
     year,
     series,
@@ -282,7 +283,7 @@ router.post('/save-result', async (req, res) => {
   }
 });
 
-router.post('/:eventId/transformed-results', async (req, res) => {
+router.post('/:eventId/transformed-results', requireAuth, async (req, res) => {
   const eventId = Number(req.params.eventId);
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
 

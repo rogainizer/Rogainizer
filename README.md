@@ -25,6 +25,13 @@ SOURCE backend/sql/init.sql;
 
 Copy `backend/.env.example` to `backend/.env` and set values.
 
+To enable protected edit actions, set backend auth values in `backend/.env`:
+
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
+- `AUTH_SECRET`
+- `AUTH_TTL_HOURS`
+
 ## 3) Install dependencies
 
 From repo root:
@@ -54,6 +61,18 @@ npm run dev
 ## Run with Docker Compose
 
 From repo root:
+
+```bash
+docker compose up --build
+```
+
+If frontend dependencies change (for example after adding Tailwind), refresh the Docker `web` node_modules volume once:
+
+```bash
+npm run docker:web:deps
+```
+
+Then run Compose normally:
 
 ```bash
 docker compose up --build
@@ -331,18 +350,70 @@ Smaller log bundle (include logs but limit lines):
 
 ## API routes
 
+- `GET /` - API status message
+
+Auth:
+
+- `POST /api/auth/login`
+- `GET /api/auth/validate`
+
+Health:
+
 - `GET /api/health` - checks API and DB connectivity
+
+Users:
+
 - `GET /api/users` - lists users
 - `POST /api/users` - creates user (`{ "name": "...", "email": "..." }`)
 - `PUT /api/users?name={originalName}&email={originalEmail}` - updates user key/data (`{ "name": "...", "email": "..." }`)
 - `DELETE /api/users?name={name}&email={email}` - deletes user by key
+
+JSON Loader:
+
+- `GET /api/json-loader?url={http(s)-json-url}` - fetches JSON from remote URL
+
+Events:
+
 - `GET /api/events` - lists all events
-- `POST /api/events` - creates event (`{ "name": "...", "date": "YYYY-MM-DD", "location": "...", "courses": ["6hr"], "categories": ["MO"] }`)
-- `PUT /api/events/:id` - updates an existing event
-- `DELETE /api/events/:id` - deletes an event
-- `GET /api/events/:eventId/teams` - lists teams for an event
-- `POST /api/events/:eventId/teams` - creates team (`{ "name": "...", "competitors": "Alice, Bob", "course": "6hr", "category": "MO" }`)
-- `PUT /api/events/:eventId/teams/:teamId` - updates an event team
-- `DELETE /api/events/:eventId/teams/:teamId` - deletes an event team
+- `GET /api/events/:eventId/results` - loads saved raw/scaled results for an event
+- `POST /api/events/save-result` - saves/overwrites event details (**auth required**)
+- `POST /api/events/:eventId/transformed-results` - saves transformed rows (**auth required**)
+- `PUT /api/events/:eventId/results/:resultId` - updates a saved result row (**auth required**)
+- `DELETE /api/events/:eventId/results/:resultId` - deletes a saved result row (**auth required**)
+
+Leader Boards:
+
+- `GET /api/leader-boards` - lists leader boards
+- `POST /api/leader-boards` - creates a leader board
+- `GET /api/leader-boards/year-results?year={year}` - lists events available for a year
+- `GET /api/leader-boards/details/:leaderBoardId` - returns leader board + selected event ids
+- `PUT /api/leader-boards/:leaderBoardId` - updates leader board metadata/event links (**auth required**)
+- `GET /api/leader-boards/:leaderBoardId/scoreboard` - returns aggregated score table
+- `GET /api/leader-boards/:leaderBoardId/member-events?member={name}` - member event breakdown
+
+### cURL auth examples
+
+Bash (Linux/macOS):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+	-H "Content-Type: application/json" \
+	-d '{"username":"admin","password":"admin"}' \
+	| sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+
+curl -X PUT http://localhost:3000/api/events/1/results/1 \
+	-H "Authorization: Bearer $TOKEN" \
+	-H "Content-Type: application/json" \
+	-d '{"team_name":"Example Team","team_member":"Alice Smith"}'
+```
+
+PowerShell:
+
+```powershell
+$login = Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/auth/login" -ContentType "application/json" -Body '{"username":"admin","password":"admin"}'
+$token = $login.token
+
+Invoke-RestMethod -Method Put -Uri "http://localhost:3000/api/events/1/results/1" -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body '{"team_name":"Example Team","team_member":"Alice Smith"}'
+```
 
 Users are keyed by the `name + email` combination.
