@@ -27,6 +27,16 @@ write_files:
 
       GITHUB_DEPLOY_KEY_BASE64="replace-with-base64-private-key"
 
+      DEFAULT_USER="root"
+      if id -u ubuntu >/dev/null 2>&1; then
+        DEFAULT_USER="ubuntu"
+      else
+        FIRST_USER="$(getent passwd 1000 | cut -d: -f1 || true)"
+        if [[ -n "$FIRST_USER" ]]; then
+          DEFAULT_USER="$FIRST_USER"
+        fi
+      fi
+
       if [[ "$REPO_URL" == "git@github.com:your-org/your-private-repo.git" ]]; then
         echo "REPO_URL is still placeholder. Edit deploy/digitalocean-cloud-init-autodeploy-private.yaml before use."
         exit 1
@@ -44,10 +54,12 @@ write_files:
       systemctl enable docker
       systemctl start docker
 
-      if id -nG ubuntu | grep -qw docker; then
-        :
-      else
-        usermod -aG docker ubuntu
+      if [[ "$DEFAULT_USER" != "root" ]]; then
+        if id -nG "$DEFAULT_USER" | grep -qw docker; then
+          :
+        else
+          usermod -aG docker "$DEFAULT_USER"
+        fi
       fi
 
       ufw allow OpenSSH
@@ -57,18 +69,23 @@ write_files:
 
       timedatectl set-timezone Pacific/Auckland || true
 
-      install -d -m 700 -o ubuntu -g ubuntu /home/ubuntu/.ssh
-      echo "$GITHUB_DEPLOY_KEY_BASE64" | base64 -d > /home/ubuntu/.ssh/id_ed25519
-      chmod 600 /home/ubuntu/.ssh/id_ed25519
-      chown ubuntu:ubuntu /home/ubuntu/.ssh/id_ed25519
-      touch /home/ubuntu/.ssh/known_hosts
-      chmod 644 /home/ubuntu/.ssh/known_hosts
-      chown ubuntu:ubuntu /home/ubuntu/.ssh/known_hosts
-      ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> /home/ubuntu/.ssh/known_hosts
+      SSH_HOME="$(getent passwd "$DEFAULT_USER" | cut -d: -f6)"
+      if [[ -z "$SSH_HOME" ]]; then
+        SSH_HOME="/root"
+      fi
+
+      install -d -m 700 -o "$DEFAULT_USER" -g "$DEFAULT_USER" "$SSH_HOME/.ssh"
+      echo "$GITHUB_DEPLOY_KEY_BASE64" | base64 -d > "$SSH_HOME/.ssh/id_ed25519"
+      chmod 600 "$SSH_HOME/.ssh/id_ed25519"
+      chown "$DEFAULT_USER:$DEFAULT_USER" "$SSH_HOME/.ssh/id_ed25519"
+      touch "$SSH_HOME/.ssh/known_hosts"
+      chmod 644 "$SSH_HOME/.ssh/known_hosts"
+      chown "$DEFAULT_USER:$DEFAULT_USER" "$SSH_HOME/.ssh/known_hosts"
+      ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> "$SSH_HOME/.ssh/known_hosts"
 
       mkdir -p /opt
 
-      export GIT_SSH_COMMAND="ssh -i /home/ubuntu/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+      export GIT_SSH_COMMAND="ssh -i $SSH_HOME/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 
       if [[ ! -d "$APP_DIR/.git" ]]; then
         git clone "$REPO_URL" "$APP_DIR"

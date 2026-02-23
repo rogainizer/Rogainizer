@@ -25,6 +25,16 @@ write_files:
       DB_PASSWORD="replace-with-strong-db-password"
       DB_NAME="rogainizer"
 
+      DEFAULT_USER="root"
+      if id -u ubuntu >/dev/null 2>&1; then
+        DEFAULT_USER="ubuntu"
+      else
+        FIRST_USER="$(getent passwd 1000 | cut -d: -f1 || true)"
+        if [[ -n "$FIRST_USER" ]]; then
+          DEFAULT_USER="$FIRST_USER"
+        fi
+      fi
+
       if [[ "$REPO_URL" == "https://github.com/your-org/your-repo.git" ]]; then
         echo "REPO_URL is still placeholder. Edit deploy/digitalocean-cloud-init-autodeploy.yaml before use."
         exit 1
@@ -37,10 +47,12 @@ write_files:
       systemctl enable docker
       systemctl start docker
 
-      if id -nG ubuntu | grep -qw docker; then
-        :
-      else
-        usermod -aG docker ubuntu
+      if [[ "$DEFAULT_USER" != "root" ]]; then
+        if id -nG "$DEFAULT_USER" | grep -qw docker; then
+          :
+        else
+          usermod -aG docker "$DEFAULT_USER"
+        fi
       fi
 
       ufw allow OpenSSH
