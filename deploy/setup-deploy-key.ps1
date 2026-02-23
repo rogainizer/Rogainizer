@@ -40,7 +40,8 @@ scp $pubKeyPath "$DropletUser@${DropletIp}:$remoteTmpPath"
 $appendCommand = @"
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
-cat $remoteTmpPath >> ~/.ssh/authorized_keys
+# Ensure file uses LF line endings
+tr -d '\r' < $remoteTmpPath >> ~/.ssh/authorized_keys
 rm -f $remoteTmpPath
 chmod 600 ~/.ssh/authorized_keys
 "@
