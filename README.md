@@ -372,6 +372,36 @@ Smaller log bundle (include logs but limit lines):
 ./deploy/collect-support-bundle.sh .env.production /tmp/rogainizer-support --tail 200
 ```
 
+## CI/CD deployment
+
+- Workflow file: `.github/workflows/deploy.yml` (runs on push to `main`)
+- Secrets required:
+	- `DROPLET_IP`: public IPv4 of the production droplet
+	- `DROPLET_SSH_KEY`: private deploy key used for SSH
+- Email notifications:
+	- `SMTP_USERNAME`: Gmail address (must have app password enabled - https://myaccount.google.com/apppasswords)
+	- `SMTP_PASSWORD`: Gmail app password for SMTP auth
+- Repo updates are deployed by pulling latest `main` on the droplet and re-running `docker compose ... up -d --build`, followed by `npm run db:init` inside the API service.
+- After deploy completes, the workflow runs `deploy/postdeploy-check.sh .env.production`, saves the output to `deploy/postdeploy-last.log`, and emails the log to `rogainizer.nz@gmail.com`.
+
+### Preparing the deploy key
+
+Run the helper script from the project root to generate key material and install the public key on the droplet:
+
+```powershell
+./deploy/setup-deploy-key.ps1 -DropletIp <droplet_ip>
+```
+
+What the script does:
+
+1. Generates an ed25519 key pair inside `.deploy-keys/` (ignored by Git)
+2. Copies the public key to the droplet and appends it to `/root/.ssh/authorized_keys`
+3. Prints the path to the private key file for use in GitHub secrets
+
+Finally, copy the **private** key contents from `.deploy-keys/gh-actions-rogainizer` into the `DROPLET_SSH_KEY` secret under **Settings → Secrets and variables → Actions**.
+
+If you are using Gmail for SMTP, enable 2FA on the account, create an App Password (type "Mail", device "Other"), and paste that value into `SMTP_PASSWORD`. Use the Gmail address for `SMTP_USERNAME`.
+
 ## API routes
 
 - `GET /` - API status message
