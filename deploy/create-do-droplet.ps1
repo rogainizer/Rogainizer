@@ -68,7 +68,7 @@ ssh_pwauth: true
 chpasswd:
   expire: false
   list: |
-    $PasswordUser:$PasswordPass
+    ${PasswordUser}:${PasswordPass}
 
 "@
 
