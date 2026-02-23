@@ -129,6 +129,41 @@ This repository includes production deployment artifacts for a single VPS:
 If you used cloud-init, initial provisioning starts automatically on first boot.
 If you did not use cloud-init, install Docker + Compose plugin manually before continuing.
 
+Optional: create the droplet via API using the included script:
+
+```bash
+export DO_API_TOKEN=<your_digitalocean_token>
+chmod +x deploy/create-do-droplet.sh
+./deploy/create-do-droplet.sh --name rogainizer-prod --region syd1 --ssh-keys "<ssh_key_id_or_fingerprint>"
+```
+
+PowerShell (Windows):
+
+```powershell
+$env:DO_API_TOKEN = "<your_digitalocean_token>"
+./deploy/create-do-droplet.ps1 -Name rogainizer-prod -Region syd1 -SshKeys "<ssh_key_id_or_fingerprint>"
+```
+
+Password-login option (no SSH key):
+
+```bash
+export DO_API_TOKEN=<your_digitalocean_token>
+./deploy/create-do-droplet.sh \
+	--name rogainizer-prod \
+	--region syd1 \
+	--password-user ubuntu \
+	--password-pass '<strong_password>'
+```
+
+```powershell
+$env:DO_API_TOKEN = "<your_digitalocean_token>"
+./deploy/create-do-droplet.ps1 -Name rogainizer-prod -Region syd1 -PasswordUser ubuntu -PasswordPass "<strong_password>"
+```
+
+Security note: SSH keys are recommended for production. If you enable password login, use a strong password and rotate it after first login.
+
+The script reads `deploy/digitalocean-cloud-init-autodeploy.yaml` by default and prints droplet ID + public IPv4.
+
 ### 1) Prepare server
 
 - Ubuntu 22.04+ VPS with Docker + Compose plugin installed
@@ -140,7 +175,11 @@ DigitalOcean cloud-init options are included:
 - `deploy/digitalocean-cloud-init.yaml` (bootstrap only)
 - `deploy/digitalocean-cloud-init-autodeploy.yaml` (bootstrap + clone + deploy)
 - `deploy/digitalocean-cloud-init-autodeploy-private.yaml` (bootstrap + private repo clone + deploy)
-- `deploy/digitalocean-cloud-init-autodeploy-metadata.yaml` (bootstrap + deploy using metadata-provided secrets)
+
+Supported autodeploy variants are:
+
+- `deploy/digitalocean-cloud-init-autodeploy.yaml`
+- `deploy/digitalocean-cloud-init-autodeploy-private.yaml`
 
 If you use the auto-deploy variant, edit placeholders before creating the droplet:
 
@@ -173,32 +212,6 @@ base64 -w 0 ~/.ssh/id_ed25519
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.ssh\id_ed25519"))
 ```
 
-For metadata-driven secrets:
-
-`deploy/digitalocean-cloud-init-autodeploy-metadata.yaml` expects JSON at:
-
-`http://169.254.169.254/metadata/v1/vendor-data`
-
-Expected shape:
-
-```json
-{
-	"rogainizer": {
-		"domain": "example.com",
-		"mysql_root_password": "strong-root-pass",
-		"db_user": "root",
-		"db_password": "strong-db-pass",
-		"db_name": "rogainizer",
-		"github_deploy_key_base64": "<optional-base64-ssh-private-key>"
-	}
-}
-```
-
-Notes:
-
-- This variant is safest for keeping secrets out of committed files.
-- If your DigitalOcean setup does not provide custom `vendor-data`, use the private variant instead.
-
 ### 2) Configure environment
 
 From repo root:
@@ -211,7 +224,18 @@ Edit `.env.production` and set:
 
 - `DOMAIN` (for TLS certificate)
 - `MYSQL_ROOT_PASSWORD`
+- `DB_USER` (recommended: non-root, for example `rogainizer_app`)
 - `DB_PASSWORD`
+
+Create/update a dedicated MySQL app user with least-privilege grants:
+
+```bash
+cd /opt/rogainizer
+chmod +x deploy/create-db-app-user.sh
+./deploy/create-db-app-user.sh .env.production
+```
+
+This script grants `SELECT, INSERT, UPDATE, DELETE` on `${DB_NAME}.*` to `${DB_USER}`.
 
 ### 3) Start production stack
 
@@ -387,7 +411,7 @@ Leader Boards:
 - `POST /api/leader-boards` - creates a leader board
 - `GET /api/leader-boards/year-results?year={year}` - lists events available for a year
 - `GET /api/leader-boards/details/:leaderBoardId` - returns leader board + selected event ids
-- `PUT /api/leader-boards/:leaderBoardId` - updates leader board metadata/event links (**auth required**)
+- `PUT /api/leader-boards/:leaderBoardId` - updates leader board details/event links (**auth required**)
 - `GET /api/leader-boards/:leaderBoardId/scoreboard` - returns aggregated score table
 - `GET /api/leader-boards/:leaderBoardId/member-events?member={name}` - member event breakdown
 
@@ -416,4 +440,26 @@ $token = $login.token
 Invoke-RestMethod -Method Put -Uri "http://localhost:3000/api/events/1/results/1" -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body '{"team_name":"Example Team","team_member":"Alice Smith"}'
 ```
 
-Users are keyed by the `name + email` combination.
+Protected DELETE example (remove result row):
+
+```bash
+curl -X DELETE http://localhost:3000/api/events/1/results/1 \
+	-H "Authorization: Bearer $TOKEN"
+```
+
+```powershell
+Invoke-RestMethod -Method Delete -Uri "http://localhost:3000/api/events/1/results/1" -Headers @{ Authorization = "Bearer $token" }
+```
+
+Protected leader board update example:
+
+```bash
+curl -X PUT http://localhost:3000/api/leader-boards/1 \
+	-H "Authorization: Bearer $TOKEN" \
+	-H "Content-Type: application/json" \
+	-d '{"name":"State Series","year":2026,"eventIds":[1,2,3]}'
+```
+
+```powershell
+Invoke-RestMethod -Method Put -Uri "http://localhost:3000/api/leader-boards/1" -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body '{"name":"State Series","year":2026,"eventIds":[1,2,3]}'
+```
