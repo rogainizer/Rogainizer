@@ -115,13 +115,18 @@ jobs:
           if [ -z "$status" ]; then
             status="unknown"
           fi
-          echo "status=$status" >> "$GITHUB_OUTPUT"
           mkdir -p postdeploy
           {
             echo "Postdeploy check status: $status"
             echo
             cat "$log_file"
           } > postdeploy/email-body.txt
+          {
+            echo "status=$status"
+            echo "body<<'EOF'"
+            cat postdeploy/email-body.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Email postdeploy result
         if: always()
@@ -134,4 +139,4 @@ jobs:
           subject: "Rogainizer prebuilt postdeploy (status: ${{ steps.postdeploy_log.outputs.status }})"
           to: rogainizer.nz@gmail.com
           from: Rogainizer CI <${{ secrets.SMTP_USERNAME }}>
-          body_path: postdeploy/email-body.txt
+          body: ${{ steps.postdeploy_log.outputs.body }}
