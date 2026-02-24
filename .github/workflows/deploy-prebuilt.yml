@@ -121,11 +121,11 @@ jobs:
             echo
             cat "$log_file"
           } > postdeploy/email-body.txt
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           {
-            echo "status=$status"
             echo "body<<'EOF'"
             cat postdeploy/email-body.txt
-            echo 'EOF'
+            echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Email postdeploy result
