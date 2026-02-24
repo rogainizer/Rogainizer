@@ -72,8 +72,9 @@ jobs:
             POSTDEPLOY_STATUS_FILE="deploy/postdeploy-status.txt"
             chmod +x deploy/postdeploy-check.sh
             set +e
-            API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" ./deploy/postdeploy-check.sh .env.production | tee "$POSTDEPLOY_LOG"
-            POSTDEPLOY_EXIT=${PIPESTATUS[0]}
+            API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" ./deploy/postdeploy-check.sh .env.production > "$POSTDEPLOY_LOG" 2>&1
+            POSTDEPLOY_EXIT=$?
+            cat "$POSTDEPLOY_LOG"
             echo "$POSTDEPLOY_EXIT" > "$POSTDEPLOY_STATUS_FILE"
             set -e
             if [ "$POSTDEPLOY_EXIT" -ne 0 ]; then
