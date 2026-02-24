@@ -16,6 +16,7 @@ services:
       retries: 10
 
   api:
+    image: ${API_IMAGE:-rogainizer-api:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -37,6 +38,7 @@ services:
       - "3000"
 
   web:
+    image: ${WEB_IMAGE:-rogainizer-web:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
