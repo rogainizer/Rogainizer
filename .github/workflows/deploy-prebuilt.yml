@@ -1,4 +1,4 @@
-name: Build Locally and Deploy
+name: Production Deploy
 
 on:
   workflow_dispatch:
@@ -105,12 +105,23 @@ jobs:
         if: always()
         id: postdeploy_log
         run: |
-          body=$(cat postdeploy/postdeploy-last.log)
-          body="${body//'%'/'%25'}"
-          body="${body//$'\n'/'%0A'}"
-          echo "body=$body" >> "$GITHUB_OUTPUT"
-          status=$(cat postdeploy/postdeploy-status.txt)
+          log_file="postdeploy/postdeploy-last.log"
+          status_file="postdeploy/postdeploy-status.txt"
+          if [ -f "$status_file" ]; then
+            status=$(tr -d '\r' < "$status_file" | tr -d '\n')
+          else
+            status="unknown"
+          fi
+          if [ -z "$status" ]; then
+            status="unknown"
+          fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
+          mkdir -p postdeploy
+          {
+            echo "Postdeploy check status: $status"
+            echo
+            cat "$log_file"
+          } > postdeploy/email-body.txt
 
       - name: Email postdeploy result
         if: always()
@@ -123,4 +134,4 @@ jobs:
           subject: "Rogainizer prebuilt postdeploy (status: ${{ steps.postdeploy_log.outputs.status }})"
           to: rogainizer.nz@gmail.com
           from: Rogainizer CI <${{ secrets.SMTP_USERNAME }}>
-          body: ${{ steps.postdeploy_log.outputs.body }}
+          body_path: postdeploy/email-body.txt
