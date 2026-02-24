@@ -374,15 +374,20 @@ Smaller log bundle (include logs but limit lines):
 
 ## CI/CD deployment
 
-- Workflow file: `.github/workflows/deploy.yml` (runs on push to `main`)
+- Workflow file: `.github/workflows/deploy-prebuilt.yml` (manual dispatch `Production Deploy`)
 - Secrets required:
 	- `DROPLET_IP`: public IPv4 of the production droplet
 	- `DROPLET_SSH_KEY`: private deploy key used for SSH
-- Email notifications:
+	- `GHCR_USERNAME`: account that owns the container images (usually the repo owner)
+	- `GHCR_TOKEN`: PAT for that account with at least `read:packages` + `write:packages`
 	- `SMTP_USERNAME`: Gmail address (must have app password enabled - https://myaccount.google.com/apppasswords)
 	- `SMTP_PASSWORD`: Gmail app password for SMTP auth
-- Repo updates are deployed by pulling latest `main` on the droplet and re-running `docker compose ... up -d --build`, followed by `npm run db:init` inside the API service.
-- After deploy completes, the workflow runs `deploy/postdeploy-check.sh .env.production`, saves the output to `deploy/postdeploy-last.log`, and emails the log to `rogainizer.nz@gmail.com`.
+- Workflow stages:
+	1. Build backend/frontend images with `docker compose -f docker-compose.prod.yml build api web`.
+	2. Tag/push images to GHCR with both `latest` and commit SHA tags.
+	3. SSH into the droplet, pull those prebuilt images, restart the stack, and run `npm run db:init`.
+	4. Execute `deploy/postdeploy-check.sh .env.production`, store logs/status on the droplet, scp them back, and email the results to `rogainizer.nz@gmail.com`.
+- The droplet login to GHCR relies on `GHCR_USERNAME`/`GHCR_TOKEN`. Generate the token from https://github.com/settings/tokens (classic PAT) and enable `read:packages` and `write:packages` scopes so it can pull/push images.
 
 ### Preparing the deploy key
 
