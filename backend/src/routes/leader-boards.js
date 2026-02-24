@@ -253,6 +253,51 @@ router.get('/:leaderBoardId/scoreboard', async (req, res) => {
   }
 });
 
+router.get('/:leaderBoardId/events', async (req, res) => {
+  const leaderBoardId = Number(req.params.leaderBoardId);
+
+  if (!Number.isInteger(leaderBoardId) || leaderBoardId <= 0) {
+    return res.status(400).json({ message: 'leaderBoardId must be a positive integer' });
+  }
+
+  try {
+    const [leaderBoardRows] = await pool.query(
+      `SELECT id FROM leader_boards WHERE id = ? LIMIT 1`,
+      [leaderBoardId]
+    );
+
+    if (leaderBoardRows.length === 0) {
+      return res.status(404).json({ message: 'Leader board not found.' });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         e.id,
+         e.name,
+         e.series,
+         e.year,
+         DATE_FORMAT(e.date, '%Y-%m-%d') AS date,
+         e.organiser,
+         e.duration_hours AS durationHours
+       FROM leader_board_results lbr
+       INNER JOIN events e ON e.id = lbr.event_id
+       WHERE lbr.leader_board_id = ?
+       ORDER BY e.date ASC, e.name ASC, e.id ASC`,
+      [leaderBoardId]
+    );
+
+    return res.json(rows);
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({
+        message: 'Required tables do not exist. Run backend/sql/init.sql first.'
+      });
+    }
+
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 router.get('/:leaderBoardId/member-events', async (req, res) => {
   const leaderBoardId = Number(req.params.leaderBoardId);
   const member = String(req.query?.member || '').trim();

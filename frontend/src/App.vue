@@ -124,6 +124,12 @@ const editLeaderBoardYearResults = ref([]);
 const editLeaderBoardYearResultsLoading = ref(false);
 const editLeaderBoardYearResultsErrorMessage = ref('');
 const selectedEditLeaderBoardResultIds = ref([]);
+const showLeaderBoardEventsDialog = ref(false);
+const leaderBoardEvents = ref([]);
+const leaderBoardEventsLoading = ref(false);
+const leaderBoardEventsErrorMessage = ref('');
+const leaderBoardEventsTitle = ref('');
+const showLeaderBoardHelpDialog = ref(false);
 const isLoggedIn = ref(false);
 const authToken = ref('');
 const showLoginDialog = ref(false);
@@ -544,6 +550,50 @@ async function openLeaderBoardMemberDialog(row) {
   } finally {
     leaderBoardMemberEventsLoading.value = false;
   }
+}
+
+function formatDurationHours(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return '';
+  }
+
+  return String(parseFloat(numericValue.toFixed(2)));
+}
+
+async function openLeaderBoardEventsDialog(leaderBoard) {
+  const leaderBoardId = Number(leaderBoard?.id);
+  if (!Number.isInteger(leaderBoardId) || leaderBoardId <= 0) {
+    return;
+  }
+
+  leaderBoardEventsTitle.value = String(leaderBoard?.name || '');
+  leaderBoardEvents.value = [];
+  leaderBoardEventsErrorMessage.value = '';
+  leaderBoardEventsLoading.value = true;
+  showLeaderBoardEventsDialog.value = true;
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/leader-boards/${leaderBoardId}/events`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || 'Failed to load leader board events');
+    }
+
+    const data = await response.json();
+    leaderBoardEvents.value = Array.isArray(data) ? data : [];
+  } catch (error) {
+    leaderBoardEventsErrorMessage.value = error.message || 'Failed to load leader board events';
+  } finally {
+    leaderBoardEventsLoading.value = false;
+  }
+}
+
+function closeLeaderBoardEventsDialog() {
+  showLeaderBoardEventsDialog.value = false;
+  leaderBoardEvents.value = [];
+  leaderBoardEventsErrorMessage.value = '';
+  leaderBoardEventsTitle.value = '';
 }
 
 function switchView(view) {
@@ -1750,37 +1800,38 @@ onMounted(() => {
 <template>
   <main class="mx-auto my-8 max-w-[1240px] px-4 font-sans text-slate-800 lg:px-6">
     <header class="page-header rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <h1 class="mb-1 text-3xl font-bold tracking-tight text-slate-900">Rogainizer</h1>
-      <p class="page-subtitle m-0 text-sm text-slate-600">Manage results ingestion, transformed scoring, and leader board views from one place.</p>
+      <h1 class="text-3xl font-bold tracking-tight text-slate-900">Rogainizer</h1>
 
-      <div class="mt-3 flex items-center justify-end gap-2">
-        <span v-if="isLoggedIn" class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">Logged in</span>
-        <button v-if="!isLoggedIn" type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openLoginDialog">Login</button>
-        <button v-else type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="logout">Logout</button>
+      <div class="mt-3 flex flex-nowrap items-center gap-3">
+        <div class="view-switcher">
+          <button
+            type="button"
+            class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+            :class="{ active: currentView === 'leader-boards', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'leader-boards' }"
+            @click="switchView('leader-boards')"
+          >Leader Boards</button>
+          <button
+            type="button"
+            class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+            :class="{ active: currentView === 'results', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'results' }"
+            @click="switchView('results')"
+          >Results</button>
+          <button
+            v-if="isLoggedIn"
+            type="button"
+            class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
+            :class="{ active: currentView === 'json-loader', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'json-loader' }"
+            @click="switchView('json-loader')"
+          >Results Loader</button>
+        </div>
+
+        <div class="ml-auto flex items-center gap-2">
+          <span v-if="isLoggedIn" class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">Logged in</span>
+          <button v-if="!isLoggedIn" type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openLoginDialog">Login</button>
+          <button v-else type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="logout">Logout</button>
+        </div>
       </div>
     </header>
-
-    <div class="view-switcher my-3 mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-      <button
-        type="button"
-        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
-        :class="{ active: currentView === 'leader-boards', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'leader-boards' }"
-        @click="switchView('leader-boards')"
-      >Leader Boards</button>
-      <button
-        type="button"
-        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
-        :class="{ active: currentView === 'results', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'results' }"
-        @click="switchView('results')"
-      >Results</button>
-      <button
-        v-if="isLoggedIn"
-        type="button"
-        class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
-        :class="{ active: currentView === 'json-loader', 'border-indigo-200 bg-white font-semibold text-indigo-700 shadow-sm': currentView === 'json-loader' }"
-        @click="switchView('json-loader')"
-      >Results Loader</button>
-    </div>
 
     <section v-if="currentView === 'json-loader' && isLoggedIn" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
         <h2 class="mb-2 text-xl font-semibold text-slate-900">Load Results</h2>
@@ -1825,7 +1876,15 @@ onMounted(() => {
         <p v-if="selectedEventResultsUrl" class="json-loader-url">{{ selectedEventResultsUrl }}</p>
         <p v-if="jsonLoadErrorMessage" class="error">{{ jsonLoadErrorMessage }}</p>
         <p v-if="saveEventErrorMessage" class="error">{{ saveEventErrorMessage }}</p>
-        <p v-if="saveEventSuccessMessage" class="success">{{ saveEventSuccessMessage }}</p>
+        <div v-if="saveEventSuccessMessage" class="success success-banner" role="status">
+          <span>{{ saveEventSuccessMessage }}</span>
+          <button
+            type="button"
+            class="plain-button dismiss-button"
+            @click="saveEventSuccessMessage = ''"
+            aria-label="Dismiss success message"
+          >&times;</button>
+        </div>
         <p v-if="transformErrorMessage" class="error">{{ transformErrorMessage }}</p>
 
         <div v-if="jsonLoadData !== null" class="json-panels">
@@ -1850,7 +1909,15 @@ onMounted(() => {
               </button>
             </div>
             <p v-if="saveTransformedErrorMessage" class="error">{{ saveTransformedErrorMessage }}</p>
-            <p v-if="saveTransformedSuccessMessage" class="success">{{ saveTransformedSuccessMessage }}</p>
+            <div v-if="saveTransformedSuccessMessage" class="success success-banner" role="status">
+              <span>{{ saveTransformedSuccessMessage }}</span>
+              <button
+                type="button"
+                class="plain-button dismiss-button"
+                @click="saveTransformedSuccessMessage = ''"
+                aria-label="Dismiss success message"
+              >&times;</button>
+            </div>
             <table v-if="transformedRows.length > 0" class="events-table transformed-table">
               <thead>
                 <tr>
@@ -1972,12 +2039,29 @@ onMounted(() => {
     </div>
 
     <section v-else-if="currentView === 'leader-boards'" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
-      <p v-if="createLeaderBoardSuccessMessage" class="success">{{ createLeaderBoardSuccessMessage }}</p>
+      <div v-if="createLeaderBoardSuccessMessage" class="success success-banner" role="status">
+        <span>{{ createLeaderBoardSuccessMessage }}</span>
+        <button
+          type="button"
+          class="plain-button dismiss-button"
+          @click="createLeaderBoardSuccessMessage = ''"
+          aria-label="Dismiss success message"
+        >&times;</button>
+      </div>
       <p v-if="leaderBoardsErrorMessage" class="error">{{ leaderBoardsErrorMessage }}</p>
       <p v-if="leaderBoardsLoading">Loading leader boards...</p>
 
       <div class="leader-boards-layout">
         <div class="json-output-panel">
+          <div class="panel-heading-row">
+            <h3 class="panel-heading">Leader Boards</h3>
+            <button
+              type="button"
+              class="help-icon-button"
+              aria-label="Leader boards help"
+              @click="showLeaderBoardHelpDialog = true"
+            >?</button>
+          </div>
           <table v-if="!leaderBoardsLoading" class="events-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
             <thead>
               <tr>
@@ -1989,7 +2073,11 @@ onMounted(() => {
             </thead>
             <tbody>
               <tr v-for="leaderBoard in leaderBoards" :key="leaderBoard.id">
-                <td>{{ leaderBoard.name }}</td>
+                <td>
+                  <button type="button" class="link-button" @click="openLeaderBoardEventsDialog(leaderBoard)">
+                    {{ leaderBoard.name }}
+                  </button>
+                </td>
                 <td>{{ leaderBoard.year }}</td>
                 <td>{{ leaderBoard.eventCount }}</td>
                 <td class="action-cell whitespace-nowrap">
@@ -2005,7 +2093,7 @@ onMounted(() => {
         </div>
 
         <div v-if="activeLeaderBoard !== null" class="json-output-panel transformed-output-panel">
-          <h3>Leader Board Scores: {{ activeLeaderBoard.name }}</h3>
+          <h3 class="panel-heading">{{ activeLeaderBoard.name }}</h3>
           <p v-if="leaderBoardScoresErrorMessage" class="error">{{ leaderBoardScoresErrorMessage }}</p>
           <p v-if="leaderBoardScoresLoading">Creating scores...</p>
 
@@ -2083,6 +2171,61 @@ onMounted(() => {
 
         <div class="mapping-dialog-actions">
           <button type="button" @click="closeLeaderBoardMemberDialog">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showLeaderBoardEventsDialog" class="dialog-backdrop">
+      <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Leader board events">
+        <h3>{{ leaderBoardEventsTitle || 'Leader Board Events' }}</h3>
+        <p v-if="leaderBoardEventsErrorMessage" class="error">{{ leaderBoardEventsErrorMessage }}</p>
+        <p v-if="leaderBoardEventsLoading">Loading events...</p>
+
+        <table v-if="!leaderBoardEventsLoading && leaderBoardEvents.length > 0" class="events-table mapping-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Series</th>
+              <th>Date</th>
+              <th>Organiser</th>
+              <th class="text-right">Duration (hrs)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="eventItem in leaderBoardEvents" :key="`leader-board-event-${eventItem.id}`">
+              <td>{{ eventItem.name }}</td>
+              <td>{{ eventItem.series }}</td>
+              <td>{{ eventItem.date }}</td>
+              <td>{{ eventItem.organiser }}</td>
+              <td class="duration-cell">{{ formatDurationHours(eventItem.durationHours) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else-if="!leaderBoardEventsLoading" class="empty-state">No events linked to this leader board.</p>
+
+        <div class="mapping-dialog-actions">
+          <button type="button" @click="closeLeaderBoardEventsDialog">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showLeaderBoardHelpDialog" class="dialog-backdrop">
+      <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Leader board help">
+        <h3>About Leader Boards</h3>
+        <p>A Leader Board has the results for every event that is included in the board.</p>
+        <p>The results are scaled so the competitor with the top score receives the maximum value and everyone else gets a proportional value.</p>
+        <p>The maximum value depends on the event duration:</p>
+        <ul class="help-list">
+          <li><strong>24&nbsp;HR</strong> → 120</li>
+          <li><strong>12&nbsp;HR</strong> → 100</li>
+          <li><strong>6&nbsp;HR</strong> → 80</li>
+          <li><strong>3&nbsp;HR</strong> → 60</li>
+          <li><strong>2&nbsp;HR</strong> → 50</li>
+          <li><strong>1&nbsp;HR</strong> → 30</li>
+        </ul>
+
+        <div class="mapping-dialog-actions">
+          <button type="button" @click="showLeaderBoardHelpDialog = false">Close</button>
         </div>
       </div>
     </div>
@@ -2287,8 +2430,16 @@ button {
   @apply cursor-pointer rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500;
 }
 
+button.plain-button {
+  @apply border-0 bg-transparent px-1 py-0 text-base font-semibold text-slate-500 shadow-none hover:bg-transparent hover:text-slate-700 focus:outline-none focus:ring-0;
+}
+
+.link-button {
+  @apply cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2 transition hover:text-indigo-900 hover:decoration-indigo-400 focus:outline-none focus:ring-0 rounded-none shadow-none hover:bg-transparent focus:bg-transparent active:bg-transparent;
+}
+
 .view-switcher {
-  @apply my-3 mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm;
+  @apply inline-flex items-center gap-2;
 }
 
 .tab-button {
@@ -2301,6 +2452,18 @@ button {
 
 .action-row {
   @apply mb-2 mt-3 flex flex-wrap items-center gap-2;
+}
+
+.panel-heading {
+  @apply text-xl font-semibold text-slate-900;
+}
+
+.panel-heading-row {
+  @apply mb-2 flex items-center gap-2;
+}
+
+.help-icon-button {
+  @apply inline-flex h-6 w-6 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-0 py-0 text-xs font-semibold text-indigo-700 shadow-none hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-0;
 }
 
 .action-cell {
@@ -2350,6 +2513,18 @@ button {
 
 .success {
   @apply my-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700;
+}
+
+.success-banner {
+  @apply flex items-center justify-between gap-3;
+}
+
+.dismiss-button {
+  @apply leading-none;
+}
+
+.duration-cell {
+  @apply text-right font-mono text-sm;
 }
 
 .empty-state {
@@ -2418,6 +2593,10 @@ button {
   @apply mr-auto border-none bg-transparent p-0;
 }
 
+.help-list {
+  @apply mb-4 list-disc pl-6 text-sm text-slate-700;
+}
+
 .json-output-panel {
   @apply mt-4 min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm;
 }
@@ -2433,7 +2612,7 @@ button {
 
 .leader-boards-layout {
   @apply grid w-full items-start gap-4;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 0.33fr) minmax(0, 0.67fr);
 }
 
 .transformed-table {
@@ -2451,7 +2630,7 @@ button {
   }
 
   .leader-boards-layout {
-    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 3.2fr);
+    grid-template-columns: minmax(300px, 0.33fr) minmax(0, 0.67fr);
   }
 }
 </style>
