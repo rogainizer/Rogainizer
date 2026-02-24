@@ -70,6 +70,9 @@ jobs:
             API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" docker compose --env-file .env.production -f docker-compose.prod.yml exec -T api npm run db:init
             POSTDEPLOY_LOG="deploy/postdeploy-last.log"
             POSTDEPLOY_STATUS_FILE="deploy/postdeploy-status.txt"
+            mkdir -p deploy
+            : > "$POSTDEPLOY_LOG"
+            : > "$POSTDEPLOY_STATUS_FILE"
             chmod +x deploy/postdeploy-check.sh
             set +e
             API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" ./deploy/postdeploy-check.sh .env.production > "$POSTDEPLOY_LOG" 2>&1
