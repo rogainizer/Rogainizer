@@ -123,7 +123,7 @@ jobs:
           } > postdeploy/email-body.txt
           echo "status=$status" >> "$GITHUB_OUTPUT"
           {
-            echo "body<<'EOF'"
+            echo "body<<EOF"
             cat postdeploy/email-body.txt
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
