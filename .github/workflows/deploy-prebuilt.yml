@@ -95,7 +95,7 @@ jobs:
           mkdir -p postdeploy
           mkdir -p ~/.ssh
           KEY_FILE=~/.ssh/rogainizer_deploy_key
-          printf '%s' "$DROPLET_SSH_KEY" > "$KEY_FILE"
+          printf '%s\n' "$DROPLET_SSH_KEY" | tr -d '\r' > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
           scp -i "$KEY_FILE" -o StrictHostKeyChecking=no root@"$DROPLET_IP":/opt/rogainizer/deploy/postdeploy-last.log postdeploy/
           scp -i "$KEY_FILE" -o StrictHostKeyChecking=no root@"$DROPLET_IP":/opt/rogainizer/deploy/postdeploy-status.txt postdeploy/
