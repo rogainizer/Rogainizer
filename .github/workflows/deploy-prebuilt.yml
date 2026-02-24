@@ -51,9 +51,6 @@ jobs:
 
       - name: Deploy pre-built images to droplet
         uses: appleboy/ssh-action@v0.1.7
-        env:
-          API_IMAGE_LATEST: ${{ env.API_IMAGE_NAME }}:${{ env.LATEST_TAG }}
-          WEB_IMAGE_LATEST: ${{ env.WEB_IMAGE_NAME }}:${{ env.LATEST_TAG }}
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
@@ -66,8 +63,8 @@ jobs:
             cd /opt/rogainizer
             git fetch origin main
             git reset --hard origin/main
-            export API_IMAGE="${API_IMAGE_LATEST}"
-            export WEB_IMAGE="${WEB_IMAGE_LATEST}"
+            export API_IMAGE="${{ env.API_IMAGE_NAME }}:${{ env.LATEST_TAG }}"
+            export WEB_IMAGE="${{ env.WEB_IMAGE_NAME }}:${{ env.LATEST_TAG }}"
             API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" docker compose --env-file .env.production -f docker-compose.prod.yml pull api web
             API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" docker compose --env-file .env.production -f docker-compose.prod.yml up -d
             API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" docker compose --env-file .env.production -f docker-compose.prod.yml exec -T api npm run db:init
