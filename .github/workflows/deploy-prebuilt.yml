@@ -87,13 +87,19 @@ jobs:
 
       - name: Download postdeploy artifacts
         if: always()
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DROPLET_IP }}
-          username: root
-          key: ${{ secrets.DROPLET_SSH_KEY }}
-          source: "/opt/rogainizer/deploy/postdeploy-*"
-          target: "postdeploy"
+        env:
+          DROPLET_IP: ${{ secrets.DROPLET_IP }}
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p postdeploy
+          mkdir -p ~/.ssh
+          KEY_FILE=~/.ssh/rogainizer_deploy_key
+          printf '%s' "$DROPLET_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          scp -i "$KEY_FILE" -o StrictHostKeyChecking=no root@"$DROPLET_IP":/opt/rogainizer/deploy/postdeploy-last.log postdeploy/
+          scp -i "$KEY_FILE" -o StrictHostKeyChecking=no root@"$DROPLET_IP":/opt/rogainizer/deploy/postdeploy-status.txt postdeploy/
+          rm -f "$KEY_FILE"
 
       - name: Prepare email body
         if: always()
