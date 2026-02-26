@@ -43,6 +43,38 @@ CREATE TABLE IF NOT EXISTS leader_board_results (
   INDEX idx_leader_board_results_event_id (event_id)
 );
 
+CREATE TABLE IF NOT EXISTS category_mappings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  pattern VARCHAR(255) NOT NULL,
+  mapped_category VARCHAR(10) NOT NULL,
+  is_regex TINYINT(1) NOT NULL DEFAULT 0,
+  priority INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_category_mappings_priority (priority, id)
+);
+
+INSERT INTO category_mappings (pattern, mapped_category, is_regex, priority)
+SELECT defaults.pattern, defaults.mapped_category, defaults.is_regex, defaults.priority
+FROM (
+  SELECT 'MJ' AS pattern, 'MJ' AS mapped_category, 0 AS is_regex, 1 AS priority UNION ALL
+  SELECT 'WJ', 'WJ', 0, 2 UNION ALL
+  SELECT 'XJ', 'XJ', 0, 3 UNION ALL
+  SELECT 'MO', 'MO', 0, 4 UNION ALL
+  SELECT 'WO', 'WO', 0, 5 UNION ALL
+  SELECT 'XO', 'XO', 0, 6 UNION ALL
+  SELECT 'MV', 'MV', 0, 7 UNION ALL
+  SELECT 'WV', 'WV', 0, 8 UNION ALL
+  SELECT 'XV', 'XV', 0, 9 UNION ALL
+  SELECT 'MSV', 'MSV', 0, 10 UNION ALL
+  SELECT 'WSV', 'WSV', 0, 11 UNION ALL
+  SELECT 'XSV', 'XSV', 0, 12 UNION ALL
+  SELECT 'MUV', 'MUV', 0, 13 UNION ALL
+  SELECT 'WUV', 'WUV', 0, 14 UNION ALL
+  SELECT 'XUV', 'XUV', 0, 15
+) AS defaults
+WHERE NOT EXISTS (SELECT 1 FROM category_mappings);
+
 CREATE TABLE IF NOT EXISTS results (
   id INT AUTO_INCREMENT PRIMARY KEY,
   event_id INT NOT NULL,

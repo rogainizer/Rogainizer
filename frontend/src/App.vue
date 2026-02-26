@@ -70,6 +70,15 @@ const transformedDisplayMode = ref('raw');
 const showCategoryMappingDialog = ref(false);
 const categoryMappingRows = ref([]);
 const categoryMappingErrorMessage = ref('');
+const categoryMappings = ref([]);
+const categoryMappingsLoading = ref(false);
+const categoryMappingsErrorMessage = ref('');
+const showManageCategoryMappingsDialog = ref(false);
+const categoryMappingConfigRows = ref([]);
+const categoryMappingConfigErrorMessage = ref('');
+const categoryMappingConfigSaving = ref(false);
+const categoryMappingConfigSuccessMessage = ref('');
+const currentRawEventGrades = ref([]);
 const fixedCategoryColumns = ['MJ', 'WJ', 'XJ', 'MO', 'WO', 'XO', 'MV', 'WV', 'XV', 'MSV', 'WSV', 'XSV', 'MUV', 'WUV', 'XUV'];
 const leaderBoards = ref([]);
 const leaderBoardsLoading = ref(false);
@@ -271,7 +280,21 @@ const displayedTransformedRows = computed(() =>
   transformedDisplayMode.value === 'scaled' ? scaledRows.value : transformedRows.value
 );
 
-const leaderBoardScoreColumns = computed(() => ['team_member', 'event_count', 'final_score', ...fixedCategoryColumns]);
+const leaderBoardCategoryColumns = computed(() => {
+  if (leaderBoardScoresRows.value.length === 0) {
+    return fixedCategoryColumns;
+  }
+
+  return fixedCategoryColumns.filter((category) =>
+    leaderBoardScoresRows.value.some((row) => {
+      const rawValue = Number(row?.raw?.[category] ?? 0);
+      const scaledValue = Number(row?.scaled?.[category] ?? 0);
+      return (Number.isFinite(rawValue) && rawValue > 0) || (Number.isFinite(scaledValue) && scaledValue > 0);
+    })
+  );
+});
+
+const leaderBoardScoreColumns = computed(() => ['team_member', 'event_count', 'final_score', ...leaderBoardCategoryColumns.value]);
 const eventResultsColumns = computed(() => ['team_name', 'team_member', 'final_score', ...fixedCategoryColumns]);
 
 const displayedLeaderBoardScoreRows = computed(() =>
@@ -404,6 +427,292 @@ watch(editLeaderBoardYear, () => {
     fetchEditLeaderBoardYearResults();
   }
 });
+
+function convertWildcardPatternToRegex(pattern) {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped
+    .replace(/\\\*/g, '.*')
+    .replace(/\\\?/g, '.');
+}
+
+function buildExecutableRegexPattern(pattern) {
+  const trimmed = String(pattern || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  try {
+    new RegExp(trimmed);
+    return trimmed;
+  } catch {
+    return convertWildcardPatternToRegex(trimmed);
+  }
+}
+
+function normalizeCategoryMappingResponse(rows) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows
+    .map((row, index) => ({
+      id: Number(row?.id ?? null) || null,
+      pattern: String(row?.pattern || ''),
+      regexPattern: String(row?.regexPattern || row?.regex_pattern || ''),
+      mappedCategory: normalizeRawTeamCategory(row?.mappedCategory || row?.mapped_category),
+      isRegex: Boolean(row?.isRegex ?? row?.is_regex),
+      priority: Number.isFinite(Number(row?.priority)) ? Number(row?.priority) : index + 1
+    }))
+    .filter((row) => Boolean(row.pattern) && Boolean(row.mappedCategory));
+}
+
+async function fetchCategoryMappings(force = false) {
+  if (categoryMappingsLoading.value) {
+    return;
+  }
+
+  if (!force && categoryMappings.value.length > 0) {
+    return;
+  }
+
+  categoryMappingsLoading.value = true;
+  categoryMappingsErrorMessage.value = '';
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/category-mappings`);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message = data?.message || 'Failed to load category mappings.';
+      throw new Error(message);
+    }
+
+    categoryMappings.value = normalizeCategoryMappingResponse(data);
+    applyGlobalMappingsToCurrentRows();
+  } catch (error) {
+    categoryMappings.value = [];
+    categoryMappingsErrorMessage.value = error.message || 'Failed to load category mappings.';
+  } finally {
+    categoryMappingsLoading.value = false;
+  }
+}
+
+function autoMapRawCategory(rawCategory) {
+  const rawText = String(rawCategory || '').trim();
+  if (!rawText) {
+    return '';
+  }
+
+  const normalizedRaw = normalizeRawTeamCategory(rawText);
+
+  for (const mapping of categoryMappings.value) {
+    if (mapping.isRegex) {
+      try {
+        const executablePattern = buildExecutableRegexPattern(mapping.regexPattern || mapping.pattern);
+        if (!executablePattern) {
+          continue;
+        }
+
+        const regex = new RegExp(executablePattern, 'i');
+        if (regex.test(rawText)) {
+          return mapping.mappedCategory;
+        }
+      } catch {
+        continue;
+      }
+    } else if (normalizeRawTeamCategory(mapping.pattern) === normalizedRaw) {
+      return mapping.mappedCategory;
+    }
+  }
+
+  if (fixedCategoryColumns.includes(normalizedRaw)) {
+    return normalizedRaw;
+  }
+
+  return '';
+}
+
+function initializeCategoryMappingRows(rawGrades = [], { preserveManual = false } = {}) {
+  const normalizedGrades = Array.isArray(rawGrades)
+    ? rawGrades.map((grade) => String(grade || '').trim()).filter(Boolean)
+    : [];
+
+  const previousByNormalized = new Map();
+
+  if (preserveManual) {
+    for (const row of categoryMappingRows.value) {
+      const normalized = row.normalizedRawCategory || normalizeRawTeamCategory(row.rawCategory);
+      if (normalized) {
+        previousByNormalized.set(normalized, row);
+      }
+    }
+  }
+
+  categoryMappingRows.value = normalizedGrades.map((grade) => {
+    const normalizedRawCategory = normalizeRawTeamCategory(grade);
+    const previousRow = preserveManual && normalizedRawCategory ? previousByNormalized.get(normalizedRawCategory) : null;
+    const mappedCategory = preserveManual && previousRow?.isManual
+      ? previousRow.mappedCategory
+      : autoMapRawCategory(grade);
+
+    return {
+      rawCategory: grade,
+      normalizedRawCategory,
+      mappedCategory,
+      isManual: Boolean(previousRow?.isManual)
+    };
+  });
+}
+
+function markCategoryMappingRowManual(row) {
+  if (row && typeof row === 'object') {
+    row.isManual = true;
+  }
+}
+
+function applyGlobalMappingsToCurrentRows() {
+  if (currentRawEventGrades.value.length === 0) {
+    return;
+  }
+
+  initializeCategoryMappingRows(currentRawEventGrades.value, { preserveManual: true });
+}
+
+function buildCategoryMappingConfigRowsFromState(sourceRows = categoryMappings.value) {
+  if (!Array.isArray(sourceRows) || sourceRows.length === 0) {
+    return [];
+  }
+
+  return sourceRows.map((row) => ({
+    id: row?.id ?? null,
+    pattern: String(row?.pattern || ''),
+    mappedCategory: String(row?.mappedCategory || ''),
+    isRegex: Boolean(row?.isRegex),
+    priority: Number(row?.priority) || 0
+  }));
+}
+
+async function openManageCategoryMappingsDialog() {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
+  categoryMappingConfigErrorMessage.value = '';
+  categoryMappingConfigSuccessMessage.value = '';
+  await fetchCategoryMappings(true);
+
+  const rows = buildCategoryMappingConfigRowsFromState();
+  categoryMappingConfigRows.value = rows.length > 0
+    ? rows
+    : [{ id: null, pattern: '', mappedCategory: fixedCategoryColumns[0] || '', isRegex: false, priority: 0 }];
+
+  showManageCategoryMappingsDialog.value = true;
+}
+
+function closeManageCategoryMappingsDialog() {
+  showManageCategoryMappingsDialog.value = false;
+  categoryMappingConfigErrorMessage.value = '';
+  categoryMappingConfigSuccessMessage.value = '';
+}
+
+function addCategoryMappingConfigRow(afterIndex = categoryMappingConfigRows.value.length - 1) {
+  const insertIndex = Number.isInteger(afterIndex) && afterIndex >= 0
+    ? Math.min(afterIndex + 1, categoryMappingConfigRows.value.length)
+    : categoryMappingConfigRows.value.length;
+
+  const newRow = {
+    id: null,
+    pattern: '',
+    mappedCategory: fixedCategoryColumns[0] || '',
+    isRegex: false,
+    priority: categoryMappingConfigRows.value.length + 1
+  };
+
+  const rows = [...categoryMappingConfigRows.value];
+  rows.splice(insertIndex, 0, newRow);
+  categoryMappingConfigRows.value = rows;
+}
+
+function removeCategoryMappingConfigRow(rowIndex) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= categoryMappingConfigRows.value.length) {
+    return;
+  }
+
+  const rows = categoryMappingConfigRows.value.filter((_, index) => index !== rowIndex);
+  categoryMappingConfigRows.value = rows;
+}
+
+function moveCategoryMappingConfigRow(rowIndex, offset) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= categoryMappingConfigRows.value.length) {
+    return;
+  }
+
+  const targetIndex = rowIndex + offset;
+  if (targetIndex < 0 || targetIndex >= categoryMappingConfigRows.value.length) {
+    return;
+  }
+
+  const rows = [...categoryMappingConfigRows.value];
+  const [movedRow] = rows.splice(rowIndex, 1);
+  rows.splice(targetIndex, 0, movedRow);
+  categoryMappingConfigRows.value = rows;
+}
+
+async function saveCategoryMappingConfig() {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
+  categoryMappingConfigErrorMessage.value = '';
+  categoryMappingConfigSuccessMessage.value = '';
+
+  const preparedRows = categoryMappingConfigRows.value
+    .map((row, index) => ({
+      pattern: String(row?.pattern || '').trim(),
+      mappedCategory: String(row?.mappedCategory || '').trim().toUpperCase(),
+      isRegex: Boolean(row?.isRegex),
+      priority: index + 1
+    }))
+    .filter((row) => row.pattern && row.mappedCategory);
+
+  for (const row of preparedRows) {
+    if (!fixedCategoryColumns.includes(row.mappedCategory)) {
+      categoryMappingConfigErrorMessage.value = `Invalid mapped category: ${row.mappedCategory}`;
+      return;
+    }
+  }
+
+  categoryMappingConfigSaving.value = true;
+
+  try {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/category-mappings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ mappings: preparedRows })
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message = data?.message || 'Failed to save category mappings.';
+      throw new Error(message);
+    }
+
+    const normalizedMappings = normalizeCategoryMappingResponse(data?.mappings || []);
+    categoryMappings.value = normalizedMappings;
+    categoryMappingConfigRows.value = buildCategoryMappingConfigRowsFromState(normalizedMappings);
+    categoryMappingConfigSuccessMessage.value = data?.message || 'Category mappings saved successfully.';
+    applyGlobalMappingsToCurrentRows();
+  } catch (error) {
+    categoryMappingConfigErrorMessage.value = error.message || 'Failed to save category mappings.';
+  } finally {
+    categoryMappingConfigSaving.value = false;
+  }
+}
 
 function transformedColumnLabel(column) {
   if (column === 'team_name') {
@@ -1501,6 +1810,42 @@ function extractNormalizedTeamCategories(value) {
   )];
 }
 
+function collectRawEventGradesFromJson(resultsJson) {
+  if (!resultsJson || typeof resultsJson !== 'object') {
+    return [];
+  }
+
+  const uniqueGrades = [];
+  const seenNormalized = new Set();
+
+  const addGrade = (grade) => {
+    const rawGrade = String(grade || '').trim();
+    if (!rawGrade) {
+      return;
+    }
+
+    const normalized = normalizeRawTeamCategory(rawGrade);
+    if (!normalized || seenNormalized.has(normalized)) {
+      return;
+    }
+
+    seenNormalized.add(normalized);
+    uniqueGrades.push(rawGrade);
+  };
+
+  if (Array.isArray(resultsJson.event_grades)) {
+    resultsJson.event_grades.forEach(addGrade);
+  }
+
+  const teams = Array.isArray(resultsJson.teams) ? resultsJson.teams : [];
+  teams.forEach((team) => {
+    const teamCategories = extractNormalizedTeamCategories(team?.category);
+    teamCategories.forEach((category) => addGrade(category));
+  });
+
+  return uniqueGrades;
+}
+
 function transformLoadedJson() {
   transformErrorMessage.value = '';
   transformedRows.value = [];
@@ -1531,7 +1876,7 @@ function transformLoadedJson() {
   );
 
   for (const row of categoryMappingRows.value) {
-    const rawCategory = normalizeRawTeamCategory(row?.rawCategory);
+    const rawCategory = row?.normalizedRawCategory || normalizeRawTeamCategory(row?.rawCategory);
     const mappedCategory = normalizeRawTeamCategory(row?.mappedCategory);
 
     if (rawCategory && mappedCategory) {
@@ -1575,7 +1920,7 @@ function transformLoadedJson() {
   transformedRows.value = rows;
 }
 
-function openCategoryMappingDialog() {
+async function openCategoryMappingDialog() {
   transformErrorMessage.value = '';
   categoryMappingErrorMessage.value = '';
 
@@ -1584,22 +1929,19 @@ function openCategoryMappingDialog() {
     return;
   }
 
-  const rawGrades = Array.isArray(jsonLoadData.value.event_grades)
-    ? jsonLoadData.value.event_grades.map((grade) => String(grade).trim()).filter(Boolean)
-    : [];
+  if (categoryMappings.value.length === 0 && !categoryMappingsLoading.value) {
+    await fetchCategoryMappings();
+  }
+
+  const rawGrades = collectRawEventGradesFromJson(jsonLoadData.value);
 
   if (rawGrades.length === 0) {
-    transformErrorMessage.value = 'No event_grades found in loaded results.';
+    transformErrorMessage.value = 'No categories found in loaded results.';
     return;
   }
 
-  categoryMappingRows.value = rawGrades.map((grade) => ({
-    rawCategory: grade,
-    mappedCategory: fixedCategoryColumns.includes(normalizeRawTeamCategory(grade))
-      ? normalizeRawTeamCategory(grade)
-      : ''
-  }));
-
+  currentRawEventGrades.value = rawGrades;
+  initializeCategoryMappingRows(rawGrades, { preserveManual: true });
   showCategoryMappingDialog.value = true;
 }
 
@@ -1756,6 +2098,13 @@ async function loadSelectedEventJson() {
 
     const data = await response.json();
     jsonLoadData.value = data;
+    const eventGrades = collectRawEventGradesFromJson(data);
+    currentRawEventGrades.value = eventGrades;
+    if (eventGrades.length > 0) {
+      initializeCategoryMappingRows(eventGrades);
+    } else {
+      categoryMappingRows.value = [];
+    }
     transformErrorMessage.value = '';
     transformedRows.value = [];
     transformedColumns.value = [];
@@ -1767,6 +2116,8 @@ async function loadSelectedEventJson() {
   } catch (error) {
     jsonLoadErrorMessage.value = error.message || 'Failed to load results';
     jsonLoadData.value = null;
+    currentRawEventGrades.value = [];
+    categoryMappingRows.value = [];
     transformErrorMessage.value = '';
     transformedRows.value = [];
     transformedColumns.value = [];
@@ -1801,6 +2152,7 @@ onMounted(() => {
 
   fetchEventsIndex();
   fetchLeaderBoards();
+  fetchCategoryMappings();
 });
 </script>
 
@@ -1882,8 +2234,18 @@ onMounted(() => {
           <button type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500" @click="openCategoryMappingDialog" :disabled="jsonLoadLoading || jsonLoadData === null">
             Transform
           </button>
+          <button
+            type="button"
+            class="secondary-button"
+            :title="!isLoggedIn ? 'Login required to manage saved mappings.' : ''"
+            @click="openManageCategoryMappingsDialog"
+            :disabled="!isLoggedIn || categoryMappingsLoading"
+          >
+            {{ categoryMappingsLoading ? 'Loading mappings...' : 'Configure mappings' }}
+          </button>
         </div>
         <p v-if="selectedEventResultsUrl" class="json-loader-url">{{ selectedEventResultsUrl }}</p>
+        <p v-if="categoryMappingsErrorMessage" class="error">{{ categoryMappingsErrorMessage }}</p>
         <p v-if="jsonLoadErrorMessage" class="error">{{ jsonLoadErrorMessage }}</p>
         <p v-if="saveEventErrorMessage" class="error">{{ saveEventErrorMessage }}</p>
         <div v-if="saveEventSuccessMessage" class="success success-banner" role="status">
@@ -2065,12 +2427,20 @@ onMounted(() => {
         <div class="json-output-panel">
           <div class="panel-heading-row">
             <h3 class="panel-heading">Leader Boards</h3>
-            <button
-              type="button"
-              class="help-icon-button"
-              aria-label="Leader boards help"
-              @click="showLeaderBoardHelpDialog = true"
-            >?</button>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="isLoggedIn"
+                type="button"
+                class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                @click="openCreateLeaderBoardDialog"
+              >Add leader board</button>
+              <button
+                type="button"
+                class="help-icon-button"
+                aria-label="Leader boards help"
+                @click="showLeaderBoardHelpDialog = true"
+              >?</button>
+            </div>
           </div>
           <table v-if="!leaderBoardsLoading" class="events-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
             <thead>
@@ -2380,6 +2750,66 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="showManageCategoryMappingsDialog" class="dialog-backdrop">
+      <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Manage saved category mappings">
+        <h3>Saved Category Mappings</h3>
+        <p class="dialog-subtitle">Rules are evaluated from top to bottom. Regex rows run against the raw category text, and simple * or ? wildcards are expanded automatically.</p>
+
+        <p v-if="categoryMappingConfigErrorMessage" class="error">{{ categoryMappingConfigErrorMessage }}</p>
+        <p v-if="categoryMappingConfigSuccessMessage" class="success">{{ categoryMappingConfigSuccessMessage }}</p>
+
+        <table v-if="categoryMappingConfigRows.length > 0" class="events-table mapping-table mapping-config-table">
+          <thead>
+            <tr>
+              <th class="w-[60px]">#</th>
+              <th>Pattern</th>
+              <th>Mapped Category</th>
+              <th>Match Type</th>
+              <th class="w-[140px]">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, rowIndex) in categoryMappingConfigRows" :key="`mapping-config-row-${row.id || rowIndex}`">
+              <td class="text-center font-semibold">{{ rowIndex + 1 }}</td>
+              <td>
+                <input v-model="row.pattern" type="text" placeholder="MO|MENS OPEN" />
+              </td>
+              <td>
+                <select v-model="row.mappedCategory">
+                  <option v-for="category in fixedCategoryColumns" :key="`config-map-${rowIndex}-${category}`" :value="category">
+                    {{ category }}
+                  </option>
+                </select>
+              </td>
+              <td>
+                <label class="regex-toggle">
+                  <input v-model="row.isRegex" type="checkbox" />
+                  Regex
+                </label>
+              </td>
+              <td class="config-row-controls">
+                <button type="button" class="ghost-button" title="Move up" @click="moveCategoryMappingConfigRow(rowIndex, -1)" :disabled="rowIndex === 0">↑</button>
+                <button type="button" class="ghost-button" title="Move down" @click="moveCategoryMappingConfigRow(rowIndex, 1)" :disabled="rowIndex === categoryMappingConfigRows.length - 1">↓</button>
+                <button type="button" class="ghost-button danger" title="Delete" @click="removeCategoryMappingConfigRow(rowIndex)">✕</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="empty-state">No saved mapping rules yet.</p>
+
+        <div class="mapping-config-actions">
+          <button type="button" class="ghost-button" @click="addCategoryMappingConfigRow()">Add mapping</button>
+        </div>
+
+        <div class="mapping-dialog-actions">
+          <button type="button" @click="closeManageCategoryMappingsDialog">Cancel</button>
+          <button type="button" @click="saveCategoryMappingConfig" :disabled="categoryMappingConfigSaving">
+            {{ categoryMappingConfigSaving ? 'Saving...' : 'Save mappings' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showCategoryMappingDialog" class="dialog-backdrop">
       <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Category mapping">
         <h3>Category Mapping</h3>
@@ -2396,7 +2826,7 @@ onMounted(() => {
             <tr v-for="(row, rowIndex) in categoryMappingRows" :key="`mapping-row-${rowIndex}`">
               <td>{{ row.rawCategory }}</td>
               <td>
-                <select v-model="row.mappedCategory">
+                <select v-model="row.mappedCategory" @change="markCategoryMappingRowManual(row)">
                   <option value="">Unmapped</option>
                   <option v-for="category in fixedCategoryColumns" :key="`map-option-${rowIndex}-${category}`" :value="category">
                     {{ category }}
@@ -2456,6 +2886,18 @@ button {
 
 button.header-auth-button {
   @apply border-0 bg-transparent px-2 py-1 text-xs font-semibold text-slate-600 shadow-none hover:text-slate-900 focus:outline-none focus:ring-0;
+}
+
+button.secondary-button {
+  @apply border-slate-300 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50;
+}
+
+button.ghost-button {
+  @apply border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-none hover:border-indigo-200 hover:bg-indigo-50 focus:ring-0;
+}
+
+button.ghost-button.danger {
+  @apply border-red-200 text-red-600 hover:border-red-300 hover:bg-red-50;
 }
 
 .password-field {
@@ -2621,8 +3063,29 @@ button.plain-button {
   width: min(760px, 100%);
 }
 
+.dialog-subtitle {
+  @apply -mt-1 mb-2 text-sm text-slate-600;
+}
+
 .mapping-table {
   @apply my-2;
+}
+
+.mapping-config-table input,
+.mapping-config-table select {
+  @apply text-xs;
+}
+
+.regex-toggle {
+  @apply inline-flex items-center gap-2 text-xs font-semibold text-slate-700;
+}
+
+.config-row-controls {
+  @apply flex items-center gap-1;
+}
+
+.mapping-config-actions {
+  @apply mt-2 flex justify-start;
 }
 
 .mapping-dialog-actions {
