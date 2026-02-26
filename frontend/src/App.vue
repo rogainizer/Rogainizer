@@ -1799,11 +1799,14 @@ onMounted(() => {
 
 <template>
   <main class="mx-auto my-8 max-w-[1240px] px-4 font-sans text-slate-800 lg:px-6">
-    <header class="page-header rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <h1 class="text-3xl font-bold tracking-tight text-slate-900">Rogainizer</h1>
+    <header class="page-header flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div class="flex items-center gap-3">
+        <img src="/rogainizer.png" alt="Rogainizer icon" class="h-[60px] w-[60px] rounded-lg object-contain" />
+        <h1 class="text-3xl font-bold tracking-tight text-slate-900">Rogainizer</h1>
+      </div>
 
-      <div class="mt-3 flex flex-nowrap items-center gap-3">
-        <div class="view-switcher">
+      <div class="ml-auto flex flex-wrap items-center gap-3">
+        <div class="view-switcher flex flex-wrap items-center gap-2">
           <button
             type="button"
             class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
@@ -1825,10 +1828,10 @@ onMounted(() => {
           >Results Loader</button>
         </div>
 
-        <div class="ml-auto flex items-center gap-2">
+        <div class="flex items-center gap-2">
           <span v-if="isLoggedIn" class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">Logged in</span>
-          <button v-if="!isLoggedIn" type="button" class="rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openLoginDialog">Login</button>
-          <button v-else type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="logout">Logout</button>
+          <button v-if="!isLoggedIn" type="button" class="header-auth-button link" @click="openLoginDialog">Login</button>
+          <button v-else type="button" class="header-auth-button link" @click="logout">Logout</button>
         </div>
       </div>
     </header>
@@ -2428,6 +2431,10 @@ select {
 
 button {
   @apply cursor-pointer rounded-md border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:border-indigo-700 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500;
+}
+
+button.header-auth-button {
+  @apply border-0 bg-transparent px-2 py-1 text-xs font-semibold text-slate-600 shadow-none hover:text-slate-900 focus:outline-none focus:ring-0;
 }
 
 button.plain-button {
