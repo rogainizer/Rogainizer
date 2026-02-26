@@ -137,6 +137,7 @@ const loginUsernameInput = ref('');
 const loginPasswordInput = ref('');
 const loginErrorMessage = ref('');
 const loginSubmitting = ref(false);
+const loginPasswordVisible = ref(false);
 
 const filteredEventSeries = computed(() => {
   const targetYear = String(selectedEventYear.value || '').trim();
@@ -617,12 +618,18 @@ function openLoginDialog() {
   loginErrorMessage.value = '';
   loginUsernameInput.value = '';
   loginPasswordInput.value = '';
+  loginPasswordVisible.value = false;
   showLoginDialog.value = true;
 }
 
 function closeLoginDialog() {
   showLoginDialog.value = false;
   loginErrorMessage.value = '';
+  loginPasswordVisible.value = false;
+}
+
+function toggleLoginPasswordVisibility() {
+  loginPasswordVisible.value = !loginPasswordVisible.value;
 }
 
 async function submitLogin() {
@@ -2348,7 +2355,21 @@ onMounted(() => {
           </label>
           <label>
             Password
-            <input v-model="loginPasswordInput" type="password" placeholder="Password" @keyup.enter="submitLogin" />
+            <div class="password-field">
+              <input
+                v-model="loginPasswordInput"
+                :type="loginPasswordVisible ? 'text' : 'password'"
+                class="password-input"
+                placeholder="Password"
+                @keyup.enter="submitLogin"
+              />
+              <button
+                type="button"
+                class="password-visibility-toggle"
+                :aria-label="loginPasswordVisible ? 'Hide password' : 'Show password'"
+                @click="toggleLoginPasswordVisibility"
+              >{{ loginPasswordVisible ? 'Hide' : 'Show' }}</button>
+            </div>
           </label>
         </div>
         <p v-if="loginErrorMessage" class="error">{{ loginErrorMessage }}</p>
@@ -2435,6 +2456,18 @@ button {
 
 button.header-auth-button {
   @apply border-0 bg-transparent px-2 py-1 text-xs font-semibold text-slate-600 shadow-none hover:text-slate-900 focus:outline-none focus:ring-0;
+}
+
+.password-field {
+  @apply relative flex items-center;
+}
+
+.password-field .password-input {
+  @apply pr-16;
+}
+
+.password-visibility-toggle {
+  @apply absolute right-2 top-1/2 -translate-y-1/2 border-0 bg-transparent px-1 text-xs font-semibold text-indigo-700 shadow-none transition hover:text-indigo-900 focus:outline-none focus:ring-0;
 }
 
 button.plain-button {
