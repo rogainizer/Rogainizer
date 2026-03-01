@@ -81,5 +81,6 @@ volumes:
   caddy_config:
 
 networks:
+  internal:
   proxy:
     name: rogainizer-proxy
