@@ -71,8 +71,15 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - internal
+      - proxy 
 
 volumes:
   db_data:
   caddy_data:
   caddy_config:
+
+networks:
+  proxy:
+    name: rogainizer-proxy
