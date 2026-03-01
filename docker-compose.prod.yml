@@ -72,7 +72,6 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      - internal
       - proxy 
 
 volumes:
@@ -81,6 +80,5 @@ volumes:
   caddy_config:
 
 networks:
-  internal:
   proxy:
     name: rogainizer-proxy
