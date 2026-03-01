@@ -1,5 +1,7 @@
 # Rogainizer Infrastructure
 
+## All the required secrets are found in .env.notes (which of course is not in this repo). You need to get this file from the current maintainer of the source
+
 Basic full-stack setup with:
 
 - Vue 3 + Vite frontend (`frontend`)
