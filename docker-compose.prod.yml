@@ -16,6 +16,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - proxy 
 
   api:
     image: ${API_IMAGE:-rogainizer-api:latest}
@@ -40,6 +42,8 @@ services:
     command: npm start
     expose:
       - "3000"
+    networks:
+      - proxy 
 
   web:
     image: ${WEB_IMAGE:-rogainizer-web:latest}
@@ -54,6 +58,8 @@ services:
       - api
     expose:
       - "80"
+    networks:
+      - proxy 
 
   proxy:
     image: caddy:2-alpine
