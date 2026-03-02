@@ -9,3 +9,15 @@
     reverse_proxy web:80
   }
 }
+
+navlight.rogainizer.com {
+  encode zstd gzip
+
+  handle /api/* {
+    reverse_proxy navlight-backend:3001
+  }
+
+  handle {
+    reverse_proxy navlight-frontend:80
+  }
+}
