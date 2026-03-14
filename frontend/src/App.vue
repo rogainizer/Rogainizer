@@ -6,6 +6,34 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const weightingTableConfig = import.meta.env.VITE_SCALE_WEIGHTING_TABLE || '';
 const loginStorageKey = 'rogainizer-login-token';
 
+function detectMobileLeaderBoardsOnlyMode() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const query = new URLSearchParams(window.location.search);
+  const mode = String(query.get('mobile') || query.get('mode') || '').trim().toLowerCase();
+  const path = String(window.location.pathname || '').trim().toLowerCase();
+
+  const explicitMobileValues = new Set(['1', 'true', 'leaderboards', 'leader-boards', 'mobile']);
+  const explicitDesktopValues = new Set(['0', 'false', 'desktop', 'full']);
+
+  if (explicitMobileValues.has(mode)) {
+    return true;
+  }
+
+  if (explicitDesktopValues.has(mode)) {
+    return false;
+  }
+
+  if (path.endsWith('/mobile')) {
+    return true;
+  }
+
+  // Auto-enable the simplified leaderboard flow on smaller screens.
+  return window.matchMedia('(max-width: 900px)').matches;
+}
+
 function parseWeightingTable(rawTable) {
   const defaultTable = [
     { duration: 24, weighting: 1.2 },
@@ -46,6 +74,7 @@ function parseWeightingTable(rawTable) {
 }
 
 const weightingTable = parseWeightingTable(weightingTableConfig);
+const isMobileLeaderBoardsOnlyMode = ref(detectMobileLeaderBoardsOnlyMode());
 const currentView = ref('leader-boards');
 const jsonLoadErrorMessage = ref('');
 const jsonLoadData = ref(null);
@@ -295,6 +324,7 @@ const leaderBoardCategoryColumns = computed(() => {
 });
 
 const leaderBoardScoreColumns = computed(() => ['team_member', 'event_count', 'final_score', ...leaderBoardCategoryColumns.value]);
+const mobileLeaderBoardScoreColumns = computed(() => leaderBoardScoreColumns.value);
 const eventResultsColumns = computed(() => ['team_name', 'team_member', 'final_score', ...fixedCategoryColumns]);
 
 const displayedLeaderBoardScoreRows = computed(() =>
@@ -765,6 +795,10 @@ function leaderBoardColumnLabel(column) {
     return ' ';
   }
 
+  if (column === 'event_count') {
+    return '#';
+  }
+
   return transformedColumnLabel(column);
 }
 
@@ -906,7 +940,18 @@ function closeLeaderBoardEventsDialog() {
   leaderBoardEventsTitle.value = '';
 }
 
+function returnToLeaderBoardSelection() {
+  activeLeaderBoard.value = null;
+  leaderBoardScoresRows.value = [];
+  leaderBoardScoresErrorMessage.value = '';
+  leaderBoardScoresLoading.value = false;
+}
+
 function switchView(view) {
+  if (isMobileLeaderBoardsOnlyMode.value && view !== 'leader-boards') {
+    return;
+  }
+
   if (view === 'json-loader' && !isLoggedIn.value) {
     openLoginDialog();
     return;
@@ -2132,6 +2177,10 @@ async function loadSelectedEventJson() {
 }
 
 onMounted(() => {
+  if (isMobileLeaderBoardsOnlyMode.value) {
+    currentView.value = 'leader-boards';
+  }
+
   const storedToken = String(sessionStorage.getItem(loginStorageKey) || '').trim();
   if (storedToken) {
     authToken.value = storedToken;
@@ -2150,9 +2199,12 @@ onMounted(() => {
       });
   }
 
-  fetchEventsIndex();
   fetchLeaderBoards();
-  fetchCategoryMappings();
+
+  if (!isMobileLeaderBoardsOnlyMode.value) {
+    fetchEventsIndex();
+    fetchCategoryMappings();
+  }
 });
 </script>
 
@@ -2165,7 +2217,7 @@ onMounted(() => {
       </div>
 
       <div class="ml-auto flex flex-wrap items-center gap-3">
-        <div class="view-switcher flex flex-wrap items-center gap-2">
+        <div v-if="!isMobileLeaderBoardsOnlyMode" class="view-switcher flex flex-wrap items-center gap-2">
           <button
             type="button"
             class="tab-button rounded-md border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-700 shadow-none transition"
@@ -2187,7 +2239,7 @@ onMounted(() => {
           >Results Loader</button>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div v-if="!isMobileLeaderBoardsOnlyMode" class="flex items-center gap-2">
           <span v-if="isLoggedIn" class="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">Logged in</span>
           <button v-if="!isLoggedIn" type="button" class="header-auth-button link" @click="openLoginDialog">Login</button>
           <button v-else type="button" class="header-auth-button link" @click="logout">Logout</button>
@@ -2411,115 +2463,204 @@ onMounted(() => {
     </div>
 
     <section v-else-if="currentView === 'leader-boards'" class="json-loader-section mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
-      <div v-if="createLeaderBoardSuccessMessage" class="success success-banner" role="status">
-        <span>{{ createLeaderBoardSuccessMessage }}</span>
-        <button
-          type="button"
-          class="plain-button dismiss-button"
-          @click="createLeaderBoardSuccessMessage = ''"
-          aria-label="Dismiss success message"
-        >&times;</button>
-      </div>
-      <p v-if="leaderBoardsErrorMessage" class="error">{{ leaderBoardsErrorMessage }}</p>
-      <p v-if="leaderBoardsLoading">Loading leader boards...</p>
+      <template v-if="isMobileLeaderBoardsOnlyMode">
+        <div v-if="activeLeaderBoard === null" class="mobile-leader-board-selector">
+          <h3 class="panel-heading">Select Leader Board</h3>
+          <p class="json-loader-subtitle">Choose a leader board to open the standings.</p>
+          <p v-if="leaderBoardsErrorMessage" class="error">{{ leaderBoardsErrorMessage }}</p>
+          <p v-if="leaderBoardsLoading">Loading leader boards...</p>
 
-      <div class="leader-boards-layout">
-        <div class="json-output-panel">
-          <div class="panel-heading-row">
-            <h3 class="panel-heading">Leader Boards</h3>
-            <div class="flex items-center gap-2">
-              <button
-                v-if="isLoggedIn"
-                type="button"
-                class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-                @click="openCreateLeaderBoardDialog"
-              >Add leader board</button>
+          <ul v-if="!leaderBoardsLoading && leaderBoards.length > 0" class="mobile-leader-board-list">
+            <li v-for="leaderBoard in leaderBoards" :key="`mobile-leader-board-${leaderBoard.id}`" class="mobile-leader-board-list-item">
               <button
                 type="button"
-                class="help-icon-button"
-                aria-label="Leader boards help"
-                @click="showLeaderBoardHelpDialog = true"
-              >?</button>
-            </div>
-          </div>
-          <table v-if="!leaderBoardsLoading" class="events-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Year</th>
-                <th>Events</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="leaderBoard in leaderBoards" :key="leaderBoard.id">
-                <td>
-                  <button type="button" class="link-button" @click="openLeaderBoardEventsDialog(leaderBoard)">
-                    {{ leaderBoard.name }}
-                  </button>
-                </td>
-                <td>{{ leaderBoard.year }}</td>
-                <td>{{ leaderBoard.eventCount }}</td>
-                <td class="action-cell whitespace-nowrap">
-                  <button v-if="isLoggedIn" type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditLeaderBoardDialog(leaderBoard)">Edit</button>
-                  <button type="button" class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="createLeaderBoardScoreView(leaderBoard)">View</button>
-                </td>
-              </tr>
-              <tr v-if="leaderBoards.length === 0">
-                <td colspan="4" class="empty-state">No leader boards yet.</td>
-              </tr>
-            </tbody>
-          </table>
+                class="mobile-leader-board-button"
+                @click="createLeaderBoardScoreView(leaderBoard)"
+              >
+                <span class="mobile-leader-board-name">{{ leaderBoard.name }}</span>
+                <span class="mobile-leader-board-meta">{{ leaderBoard.year }} | {{ leaderBoard.eventCount }} events</span>
+              </button>
+            </li>
+          </ul>
+
+          <p v-else-if="!leaderBoardsLoading" class="empty-state">No leader boards yet.</p>
         </div>
 
-        <div v-if="activeLeaderBoard !== null" class="json-output-panel transformed-output-panel">
-          <h3 class="panel-heading">{{ activeLeaderBoard.name }}</h3>
-          <p v-if="leaderBoardScoresErrorMessage" class="error">{{ leaderBoardScoresErrorMessage }}</p>
-          <p v-if="leaderBoardScoresLoading">Creating scores...</p>
-
-          <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="transformed-mode-switch">
-            <label>
-              <input v-model="leaderBoardScoresShowRaw" type="checkbox" />
-              Raw
-            </label>
-            <label>
-              <input v-model="leaderBoardScoresShowRank" type="checkbox" />
-              Rank
-            </label>
+        <div v-else class="mobile-leader-board-scoreboard">
+          <div class="mobile-leader-board-toolbar">
+            <button
+              type="button"
+              class="secondary-button mobile-back-button"
+              @click="returnToLeaderBoardSelection"
+            >Back</button>
+            <button
+              type="button"
+              class="help-icon-button"
+              aria-label="Leader boards help"
+              @click="showLeaderBoardHelpDialog = true"
+            >?</button>
           </div>
 
-          <table v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="events-table transformed-table">
-            <thead>
-              <tr>
-                <th
-                  v-for="column in leaderBoardScoreColumns"
-                  :key="`leader-board-score-header-${column}`"
-                  :class="{ 'sortable-header': isLeaderBoardScoreColumn(column) }"
-                  @click="sortLeaderBoardScoresBy(column)"
-                >
-                  {{ leaderBoardColumnLabel(column) }}{{ leaderBoardSortIndicator(column) }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, rowIndex) in sortedLeaderBoardScoreRows" :key="`leader-board-score-row-${rowIndex}`">
-                <td
-                  v-for="column in leaderBoardScoreColumns"
-                  :key="`leader-board-score-cell-${rowIndex}-${column}`"
-                  :class="{
-                    'scaled-score-cell': !leaderBoardScoresShowRaw && column !== 'team_name' && column !== 'team_member',
-                    'member-cell': column === 'team_member'
-                  }"
-                  @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
-                >
-                  {{ formatLeaderBoardScoreCell(row, column) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <h3 class="panel-heading">{{ activeLeaderBoard.name }}</h3>
+          <p class="json-loader-subtitle">{{ activeLeaderBoard.year }} | {{ activeLeaderBoard.eventCount }} events</p>
+          <p v-if="leaderBoardScoresErrorMessage" class="error">{{ leaderBoardScoresErrorMessage }}</p>
+          <p v-if="leaderBoardScoresLoading">Loading leaderboard...</p>
+
+          <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="mobile-score-table-wrap">
+            <table class="events-table transformed-table mobile-score-table leader-board-score-table">
+              <thead>
+                <tr>
+                  <th
+                    v-for="column in mobileLeaderBoardScoreColumns"
+                    :key="`mobile-leader-board-score-header-${column}`"
+                    :class="{
+                      'sortable-header': isLeaderBoardScoreColumn(column),
+                      'sticky-member-column-header': column === 'team_member'
+                    }"
+                    @click="sortLeaderBoardScoresBy(column)"
+                  >
+                    {{ leaderBoardColumnLabel(column) }}{{ leaderBoardSortIndicator(column) }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in sortedLeaderBoardScoreRows" :key="`mobile-leader-board-score-row-${rowIndex}`">
+                  <td
+                    v-for="column in mobileLeaderBoardScoreColumns"
+                    :key="`mobile-leader-board-score-cell-${rowIndex}-${column}`"
+                    :class="{
+                      'scaled-score-cell': column !== 'team_name' && column !== 'team_member',
+                      'member-cell': column === 'team_member',
+                      'sticky-member-column-cell': column === 'team_member'
+                    }"
+                    @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
+                  >
+                    {{ formatLeaderBoardScoreCell(row, column) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <p v-else-if="!leaderBoardScoresLoading" class="empty-state">No scores found for this leader board.</p>
         </div>
-      </div>
+      </template>
+
+      <template v-else>
+        <div v-if="createLeaderBoardSuccessMessage" class="success success-banner" role="status">
+          <span>{{ createLeaderBoardSuccessMessage }}</span>
+          <button
+            type="button"
+            class="plain-button dismiss-button"
+            @click="createLeaderBoardSuccessMessage = ''"
+            aria-label="Dismiss success message"
+          >&times;</button>
+        </div>
+        <p v-if="leaderBoardsErrorMessage" class="error">{{ leaderBoardsErrorMessage }}</p>
+        <p v-if="leaderBoardsLoading">Loading leader boards...</p>
+
+        <div class="leader-boards-layout">
+          <div class="json-output-panel">
+            <div class="panel-heading-row">
+              <h3 class="panel-heading">Leader Boards</h3>
+              <div class="flex items-center gap-2">
+                <button
+                  v-if="isLoggedIn"
+                  type="button"
+                  class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                  @click="openCreateLeaderBoardDialog"
+                >Add leader board</button>
+                <button
+                  type="button"
+                  class="help-icon-button"
+                  aria-label="Leader boards help"
+                  @click="showLeaderBoardHelpDialog = true"
+                >?</button>
+              </div>
+            </div>
+            <table v-if="!leaderBoardsLoading" class="events-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Year</th>
+                  <th>Events</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="leaderBoard in leaderBoards" :key="leaderBoard.id">
+                  <td>
+                    <button type="button" class="link-button" @click="openLeaderBoardEventsDialog(leaderBoard)">
+                      {{ leaderBoard.name }}
+                    </button>
+                  </td>
+                  <td>{{ leaderBoard.year }}</td>
+                  <td>{{ leaderBoard.eventCount }}</td>
+                  <td class="action-cell whitespace-nowrap">
+                    <button v-if="isLoggedIn" type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditLeaderBoardDialog(leaderBoard)">Edit</button>
+                    <button type="button" class="action-button rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="createLeaderBoardScoreView(leaderBoard)">View</button>
+                  </td>
+                </tr>
+                <tr v-if="leaderBoards.length === 0">
+                  <td colspan="4" class="empty-state">No leader boards yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div v-if="activeLeaderBoard !== null" class="json-output-panel transformed-output-panel">
+            <h3 class="panel-heading">{{ activeLeaderBoard.name }}</h3>
+            <p v-if="leaderBoardScoresErrorMessage" class="error">{{ leaderBoardScoresErrorMessage }}</p>
+            <p v-if="leaderBoardScoresLoading">Creating scores...</p>
+
+            <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="transformed-mode-switch">
+              <label>
+                <input v-model="leaderBoardScoresShowRaw" type="checkbox" />
+                Raw
+              </label>
+              <label>
+                <input v-model="leaderBoardScoresShowRank" type="checkbox" />
+                Rank
+              </label>
+            </div>
+
+            <table v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="events-table transformed-table leader-board-score-table">
+              <thead>
+                <tr>
+                  <th
+                    v-for="column in leaderBoardScoreColumns"
+                    :key="`leader-board-score-header-${column}`"
+                    :class="{
+                      'sortable-header': isLeaderBoardScoreColumn(column),
+                      'sticky-member-column-header': column === 'team_member'
+                    }"
+                    @click="sortLeaderBoardScoresBy(column)"
+                  >
+                    {{ leaderBoardColumnLabel(column) }}{{ leaderBoardSortIndicator(column) }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in sortedLeaderBoardScoreRows" :key="`leader-board-score-row-${rowIndex}`">
+                  <td
+                    v-for="column in leaderBoardScoreColumns"
+                    :key="`leader-board-score-cell-${rowIndex}-${column}`"
+                    :class="{
+                      'scaled-score-cell': !leaderBoardScoresShowRaw && column !== 'team_name' && column !== 'team_member',
+                      'member-cell': column === 'team_member',
+                      'sticky-member-column-cell': column === 'team_member'
+                    }"
+                    @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
+                  >
+                    {{ formatLeaderBoardScoreCell(row, column) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else-if="!leaderBoardScoresLoading" class="empty-state">No scores found for this leader board.</p>
+          </div>
+        </div>
+      </template>
     </section>
 
     <div v-if="showLeaderBoardMemberDialog" class="dialog-backdrop">
@@ -3116,6 +3257,95 @@ button.plain-button {
 .leader-boards-layout {
   @apply grid w-full items-start gap-4;
   grid-template-columns: minmax(0, 0.33fr) minmax(0, 0.67fr);
+}
+
+.mobile-leader-board-selector,
+.mobile-leader-board-scoreboard {
+  @apply rounded-lg border border-slate-200 bg-white p-3 shadow-sm;
+}
+
+.mobile-leader-board-list {
+  @apply m-0 list-none p-0;
+}
+
+.mobile-leader-board-list-item {
+  @apply mb-2;
+}
+
+.mobile-leader-board-list-item:last-child {
+  @apply mb-0;
+}
+
+.mobile-leader-board-button {
+  @apply flex w-full flex-col items-start gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-slate-800 shadow-none hover:border-indigo-300 hover:bg-indigo-50;
+}
+
+.mobile-leader-board-name {
+  @apply text-sm font-semibold text-slate-900;
+}
+
+.mobile-leader-board-meta {
+  @apply text-xs text-slate-600;
+}
+
+.mobile-leader-board-toolbar {
+  @apply mb-2 flex items-center justify-between gap-2;
+}
+
+.mobile-back-button {
+  @apply px-3 py-1 text-xs;
+}
+
+.mobile-score-table-wrap {
+  @apply w-full overflow-x-auto;
+}
+
+.mobile-score-table {
+  @apply min-w-max;
+}
+
+.leader-board-score-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: visible !important;
+}
+
+.leader-board-score-table th,
+.leader-board-score-table td {
+  white-space: nowrap;
+}
+
+.leader-board-score-table th:not(.sticky-member-column-header),
+.leader-board-score-table td:not(.sticky-member-column-cell) {
+  width: 1%;
+}
+
+.leader-board-score-table .sticky-member-column-header,
+.leader-board-score-table .sticky-member-column-cell {
+  position: sticky !important;
+  left: 0 !important;
+  background-clip: border-box;
+  background-image: none;
+}
+
+.leader-board-score-table .sticky-member-column-header {
+  @apply z-40;
+  background-color: #f1f5f9;
+  box-shadow: 1px 0 0 rgba(148, 163, 184, 0.45);
+}
+
+.leader-board-score-table .sticky-member-column-cell {
+  @apply z-30;
+  background-color: #ffffff;
+  box-shadow: 1px 0 0 rgba(148, 163, 184, 0.35);
+}
+
+.leader-board-score-table tbody tr:nth-child(even) .sticky-member-column-cell {
+  background-color: #f8fafc;
+}
+
+.leader-board-score-table tbody tr:hover .sticky-member-column-cell {
+  background-color: #eef2ff;
 }
 
 .transformed-table {

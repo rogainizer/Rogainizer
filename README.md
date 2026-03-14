@@ -60,6 +60,12 @@ npm run dev
 - API: http://localhost:3000
 - Frontend: http://localhost:5173
 
+Mobile leaderboards-only view (phone-friendly):
+
+- Automatically enabled when viewport width is `900px` or smaller.
+- Optional force-mobile URL: `http://localhost:5173/?mobile=1`
+- Optional force-desktop URL: `http://localhost:5173/?mobile=0`
+
 ## Run with Docker Compose
 
 From repo root:
