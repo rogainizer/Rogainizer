@@ -2535,7 +2535,12 @@ onMounted(() => {
                     }"
                     @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
                   >
-                    {{ formatLeaderBoardScoreCell(row, column) }}
+                    <span
+                      v-if="column === 'team_member'"
+                      class="member-cell-text"
+                      :title="String(row.team_member || '')"
+                    >{{ row.team_member }}</span>
+                    <template v-else>{{ formatLeaderBoardScoreCell(row, column) }}</template>
                   </td>
                 </tr>
               </tbody>
@@ -2652,7 +2657,12 @@ onMounted(() => {
                     }"
                     @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
                   >
-                    {{ formatLeaderBoardScoreCell(row, column) }}
+                    <span
+                      v-if="column === 'team_member'"
+                      class="member-cell-text"
+                      :title="String(row.team_member || '')"
+                    >{{ row.team_member }}</span>
+                    <template v-else>{{ formatLeaderBoardScoreCell(row, column) }}</template>
                   </td>
                 </tr>
               </tbody>
@@ -2665,7 +2675,6 @@ onMounted(() => {
 
     <div v-if="showLeaderBoardMemberDialog" class="dialog-backdrop">
       <div class="mapping-dialog" role="dialog" aria-modal="true" aria-label="Member event scores">
-        <h3>Member Event Scores</h3>
         <p>{{ selectedLeaderBoardMember }}</p>
         <p v-if="leaderBoardMemberEventsErrorMessage" class="error">{{ leaderBoardMemberEventsErrorMessage }}</p>
         <p v-if="leaderBoardMemberEventsLoading">Loading event scores...</p>
@@ -3189,6 +3198,17 @@ button.plain-button {
 
 .events-table td.member-cell {
   @apply cursor-pointer font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2;
+}
+
+.member-cell-text {
+  @apply block truncate;
+  max-width: min(34vw, 8rem);
+}
+
+@media (min-width: 640px) {
+  .member-cell-text {
+    max-width: 10rem;
+  }
 }
 
 .events-table td.result-member-warning {
