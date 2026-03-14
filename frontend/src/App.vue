@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import JsonTreeNode from './components/JsonTreeNode.vue';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -940,11 +940,40 @@ function closeLeaderBoardEventsDialog() {
   leaderBoardEventsTitle.value = '';
 }
 
-function returnToLeaderBoardSelection() {
+function resetLeaderBoardSelectionScreen() {
   activeLeaderBoard.value = null;
   leaderBoardScoresRows.value = [];
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresLoading.value = false;
+}
+
+function isMobileLeaderBoardHistoryState(state) {
+  return Boolean(state && typeof state === 'object' && state.mobileLeaderBoardDetail === true);
+}
+
+function returnToLeaderBoardSelection({ skipHistoryBack = false } = {}) {
+  const canUseHistoryBack = !skipHistoryBack
+    && isMobileLeaderBoardsOnlyMode.value
+    && typeof window !== 'undefined'
+    && activeLeaderBoard.value !== null
+    && isMobileLeaderBoardHistoryState(window.history.state);
+
+  if (canUseHistoryBack) {
+    window.history.back();
+    return;
+  }
+
+  resetLeaderBoardSelectionScreen();
+}
+
+function handleMobileLeaderBoardPopState() {
+  if (!isMobileLeaderBoardsOnlyMode.value || typeof window === 'undefined') {
+    return;
+  }
+
+  if (!isMobileLeaderBoardHistoryState(window.history.state)) {
+    resetLeaderBoardSelectionScreen();
+  }
 }
 
 function switchView(view) {
@@ -1341,12 +1370,28 @@ async function createLeaderBoardScoreView(leaderBoard) {
     return;
   }
 
+  const shouldPushMobileHistoryEntry = isMobileLeaderBoardsOnlyMode.value
+    && typeof window !== 'undefined'
+    && activeLeaderBoard.value === null;
+
   activeLeaderBoard.value = {
     id: leaderBoard.id,
     name: leaderBoard.name,
     year: leaderBoard.year,
     eventCount: leaderBoard.eventCount
   };
+
+  if (shouldPushMobileHistoryEntry) {
+    window.history.pushState(
+      {
+        mobileLeaderBoardDetail: true,
+        leaderBoardId: Number(leaderBoard.id) || null
+      },
+      '',
+      window.location.href
+    );
+  }
+
   leaderBoardScoresRows.value = [];
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresShowRaw.value = false;
@@ -2179,6 +2224,9 @@ async function loadSelectedEventJson() {
 onMounted(() => {
   if (isMobileLeaderBoardsOnlyMode.value) {
     currentView.value = 'leader-boards';
+    if (typeof window !== 'undefined') {
+      window.addEventListener('popstate', handleMobileLeaderBoardPopState);
+    }
   }
 
   const storedToken = String(sessionStorage.getItem(loginStorageKey) || '').trim();
@@ -2204,6 +2252,12 @@ onMounted(() => {
   if (!isMobileLeaderBoardsOnlyMode.value) {
     fetchEventsIndex();
     fetchCategoryMappings();
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('popstate', handleMobileLeaderBoardPopState);
   }
 });
 </script>
