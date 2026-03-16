@@ -21,3 +21,7 @@ navlight.rogainizer.com {
     reverse_proxy navlight-frontend:80
   }
 }
+
+planner.rogainizer.com {
+  reverse_proxy navlight-mapper-frontend:80
+}
