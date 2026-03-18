@@ -83,6 +83,9 @@ write_files:
 
       docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 
+      chmod +x ./deploy/tune-mysql-small-vm.sh
+      ./deploy/tune-mysql-small-vm.sh .env.production
+
       for attempt in 1 2 3 4 5; do
         if docker compose --env-file .env.production -f docker-compose.prod.yml exec -T api npm run db:init; then
           break

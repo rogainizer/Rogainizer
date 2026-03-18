@@ -261,6 +261,29 @@ This runs:
 - `web` as static nginx serving built Vite output
 - `proxy` (Caddy) handling HTTPS and routing `/api/*` to backend
 
+### 3b) Apply small-VM MySQL tuning
+
+```bash
+cd /opt/rogainizer
+chmod +x deploy/tune-mysql-small-vm.sh
+./deploy/tune-mysql-small-vm.sh .env.production
+```
+
+This script writes `deploy/mysql/99-rogainizer-small-vm.cnf`, restarts the `db` service, and verifies settings after restart.
+
+Applied settings:
+
+- `innodb_buffer_pool_size=134217728` (128 MB)
+- `max_connections=25`
+- `table_open_cache=128`
+- `thread_cache_size=4`
+- `tmp_table_size=16777216` (16 MB)
+- `max_heap_table_size=16777216` (16 MB)
+- `innodb_stats_on_metadata=OFF`
+- `performance_schema=OFF` (startup setting)
+
+Autodeploy cloud-init variants run this tuning script automatically.
+
 ### 4) Initialize schema (first deploy)
 
 ```bash
