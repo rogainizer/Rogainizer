@@ -2560,6 +2560,13 @@ onBeforeUnmount(() => {
           <p v-if="leaderBoardScoresErrorMessage" class="error">{{ leaderBoardScoresErrorMessage }}</p>
           <p v-if="leaderBoardScoresLoading">Loading leaderboard...</p>
 
+          <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="transformed-mode-switch">
+            <label>
+              <input v-model="leaderBoardScoresShowRank" type="checkbox" />
+              Rank
+            </label>
+          </div>
+
           <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="mobile-score-table-wrap">
             <table class="events-table transformed-table mobile-score-table leader-board-score-table">
               <thead>
@@ -2807,6 +2814,9 @@ onBeforeUnmount(() => {
           <li><strong>2&nbsp;HR</strong> → 50</li>
           <li><strong>1&nbsp;HR</strong> → 30</li>
         </ul>
+        <p>The # column shows the number of events the competitor has participated in.</p>
+        <p>The SCORE column shows the competitor's scaled uncategorized score.</p>
+        <p>The remaining columns show the competitor's scaled score for each category.</p>
 
         <div class="mapping-dialog-actions">
           <button type="button" @click="showLeaderBoardHelpDialog = false">Close</button>

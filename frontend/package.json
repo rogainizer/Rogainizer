@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:remote-api": "vite --mode remote-api",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -60,6 +60,12 @@ npm run dev
 - API: http://localhost:3000
 - Frontend: http://localhost:5173
 
+To run only the frontend in dev mode against a deployed backend API instead of the local API:
+
+1. Copy `frontend/.env.remote-api.example` to `frontend/.env.remote-api.local`
+2. Set `VITE_API_BASE_URL` to the deployed backend URL
+3. Run `npm run dev:web:remote-api`
+
 Mobile leaderboards-only view (phone-friendly):
 
 - Automatically enabled when viewport width is `900px` or smaller.

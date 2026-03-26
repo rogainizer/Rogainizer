@@ -6,6 +6,21 @@ Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://
 
 ## Environment
 
+### `VITE_API_BASE_URL`
+
+Configures the backend API base URL used by the frontend.
+
+- Default dev value: `http://localhost:3000`
+- Example deployed value: `https://your-deployed-api.example.com`
+
+For the normal local workflow, run `npm run dev` and the frontend will use the local backend.
+
+To run the frontend in dev mode against a deployed backend API:
+
+1. Copy `frontend/.env.remote-api.example` to `frontend/.env.remote-api.local`
+2. Set `VITE_API_BASE_URL` to the deployed backend URL
+3. Run `npm run dev:web:remote-api` from the repo root, or `npm run dev:remote-api` from `frontend`
+
 ### `VITE_SCALE_WEIGHTING_TABLE`
 
 Configures duration-based weighting for scaled transformed values.
