@@ -5,6 +5,7 @@ import JsonTreeNode from './components/JsonTreeNode.vue';
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const weightingTableConfig = import.meta.env.VITE_SCALE_WEIGHTING_TABLE || '';
 const loginStorageKey = 'rogainizer-login-token';
+const leaderBoardUrlParamKey = 'leaderBoardId';
 
 function detectMobileLeaderBoardsOnlyMode() {
   if (typeof window === 'undefined') {
@@ -947,6 +948,63 @@ function resetLeaderBoardSelectionScreen() {
   leaderBoardScoresLoading.value = false;
 }
 
+function getLeaderBoardIdFromUrl() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const query = new URLSearchParams(window.location.search);
+  const candidate = Number(query.get(leaderBoardUrlParamKey));
+  return Number.isInteger(candidate) && candidate > 0 ? candidate : null;
+}
+
+function syncLeaderBoardUrl(leaderBoardId, { historyMode = 'replace', state = null } = {}) {
+  if (typeof window === 'undefined' || historyMode === 'none') {
+    return;
+  }
+
+  const nextUrl = new URL(window.location.href);
+
+  if (Number.isInteger(leaderBoardId) && leaderBoardId > 0) {
+    nextUrl.searchParams.set(leaderBoardUrlParamKey, String(leaderBoardId));
+  } else {
+    nextUrl.searchParams.delete(leaderBoardUrlParamKey);
+  }
+
+  const nextState = state ?? window.history.state;
+  const method = historyMode === 'push' ? 'pushState' : 'replaceState';
+  window.history[method](nextState, '', nextUrl);
+}
+
+async function restoreLeaderBoardSelectionFromUrl() {
+  const leaderBoardId = getLeaderBoardIdFromUrl();
+
+  if (leaderBoardId === null) {
+    if (activeLeaderBoard.value !== null) {
+      resetLeaderBoardSelectionScreen();
+    }
+    return;
+  }
+
+  if (leaderBoards.value.length === 0) {
+    return;
+  }
+
+  const matchingLeaderBoard = leaderBoards.value.find((leaderBoard) => Number(leaderBoard?.id) === leaderBoardId);
+  if (!matchingLeaderBoard) {
+    return;
+  }
+
+  currentView.value = 'leader-boards';
+
+  const activeLeaderBoardId = Number(activeLeaderBoard.value?.id ?? null);
+  if (activeLeaderBoardId === leaderBoardId && (leaderBoardScoresRows.value.length > 0 || leaderBoardScoresLoading.value)) {
+    return;
+  }
+
+  await createLeaderBoardScoreView(matchingLeaderBoard, { historyMode: 'none' });
+}
+
 function isMobileLeaderBoardHistoryState(state) {
   return Boolean(state && typeof state === 'object' && state.mobileLeaderBoardDetail === true);
 }
@@ -963,17 +1021,12 @@ function returnToLeaderBoardSelection({ skipHistoryBack = false } = {}) {
     return;
   }
 
+  syncLeaderBoardUrl(null, { historyMode: 'replace' });
   resetLeaderBoardSelectionScreen();
 }
 
-function handleMobileLeaderBoardPopState() {
-  if (!isMobileLeaderBoardsOnlyMode.value || typeof window === 'undefined') {
-    return;
-  }
-
-  if (!isMobileLeaderBoardHistoryState(window.history.state)) {
-    resetLeaderBoardSelectionScreen();
-  }
+function handleLeaderBoardPopState() {
+  restoreLeaderBoardSelectionFromUrl();
 }
 
 function switchView(view) {
@@ -1358,6 +1411,7 @@ async function fetchLeaderBoards() {
 
     const data = await response.json();
     leaderBoards.value = Array.isArray(data) ? data : [];
+    await restoreLeaderBoardSelectionFromUrl();
   } catch (error) {
     leaderBoardsErrorMessage.value = error.message || 'Failed to load leader boards';
   } finally {
@@ -1365,27 +1419,46 @@ async function fetchLeaderBoards() {
   }
 }
 
-async function createLeaderBoardScoreView(leaderBoard) {
+async function createLeaderBoardScoreView(leaderBoard, { historyMode } = {}) {
   if (!leaderBoard?.id) {
     return;
   }
 
-  const shouldPushMobileHistoryEntry = isMobileLeaderBoardsOnlyMode.value
+  const leaderBoardId = Number(leaderBoard.id);
+  if (!Number.isInteger(leaderBoardId) || leaderBoardId <= 0) {
+    return;
+  }
+
+  const resolvedHistoryMode = historyMode ?? (
+    isMobileLeaderBoardsOnlyMode.value
     && typeof window !== 'undefined'
-    && activeLeaderBoard.value === null;
+    && activeLeaderBoard.value === null
+      ? 'push'
+      : 'replace'
+  );
 
   activeLeaderBoard.value = {
-    id: leaderBoard.id,
+    id: leaderBoardId,
     name: leaderBoard.name,
     year: leaderBoard.year,
     eventCount: leaderBoard.eventCount
   };
 
-  if (shouldPushMobileHistoryEntry) {
-    window.history.pushState(
+  syncLeaderBoardUrl(leaderBoardId, {
+    historyMode: resolvedHistoryMode,
+    state: resolvedHistoryMode === 'push'
+      ? {
+          mobileLeaderBoardDetail: true,
+          leaderBoardId
+        }
+      : window.history.state
+  });
+
+  if (isMobileLeaderBoardsOnlyMode.value && resolvedHistoryMode !== 'push' && typeof window !== 'undefined') {
+    window.history.replaceState(
       {
         mobileLeaderBoardDetail: true,
-        leaderBoardId: Number(leaderBoard.id) || null
+        leaderBoardId
       },
       '',
       window.location.href
@@ -2224,9 +2297,10 @@ async function loadSelectedEventJson() {
 onMounted(() => {
   if (isMobileLeaderBoardsOnlyMode.value) {
     currentView.value = 'leader-boards';
-    if (typeof window !== 'undefined') {
-      window.addEventListener('popstate', handleMobileLeaderBoardPopState);
-    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', handleLeaderBoardPopState);
   }
 
   const storedToken = String(sessionStorage.getItem(loginStorageKey) || '').trim();
@@ -2257,7 +2331,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
-    window.removeEventListener('popstate', handleMobileLeaderBoardPopState);
+    window.removeEventListener('popstate', handleLeaderBoardPopState);
   }
 });
 </script>
