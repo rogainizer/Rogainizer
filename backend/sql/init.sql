@@ -58,22 +58,31 @@ INSERT INTO category_mappings (pattern, mapped_category, is_regex, priority)
 SELECT defaults.pattern, defaults.mapped_category, defaults.is_regex, defaults.priority
 FROM (
   SELECT 'MJ' AS pattern, 'MJ' AS mapped_category, 0 AS is_regex, 1 AS priority UNION ALL
-  SELECT 'WJ', 'WJ', 0, 2 UNION ALL
-  SELECT 'XJ', 'XJ', 0, 3 UNION ALL
-  SELECT 'MO', 'MO', 0, 4 UNION ALL
-  SELECT 'WO', 'WO', 0, 5 UNION ALL
-  SELECT 'XO', 'XO', 0, 6 UNION ALL
-  SELECT 'MV', 'MV', 0, 7 UNION ALL
-  SELECT 'WV', 'WV', 0, 8 UNION ALL
-  SELECT 'XV', 'XV', 0, 9 UNION ALL
-  SELECT 'MSV', 'MSV', 0, 10 UNION ALL
-  SELECT 'WSV', 'WSV', 0, 11 UNION ALL
-  SELECT 'XSV', 'XSV', 0, 12 UNION ALL
-  SELECT 'MUV', 'MUV', 0, 13 UNION ALL
-  SELECT 'WUV', 'WUV', 0, 14 UNION ALL
-  SELECT 'XUV', 'XUV', 0, 15
+  SELECT 'SCH', 'SCH', 0, 2 UNION ALL
+  SELECT 'WJ', 'WJ', 0, 3 UNION ALL
+  SELECT 'XJ', 'XJ', 0, 4 UNION ALL
+  SELECT 'MO', 'MO', 0, 5 UNION ALL
+  SELECT 'WO', 'WO', 0, 6 UNION ALL
+  SELECT 'XO', 'XO', 0, 7 UNION ALL
+  SELECT 'MV', 'MV', 0, 8 UNION ALL
+  SELECT 'WV', 'WV', 0, 9 UNION ALL
+  SELECT 'XV', 'XV', 0, 10 UNION ALL
+  SELECT 'MSV', 'MSV', 0, 11 UNION ALL
+  SELECT 'WSV', 'WSV', 0, 12 UNION ALL
+  SELECT 'XSV', 'XSV', 0, 13 UNION ALL
+  SELECT 'MUV', 'MUV', 0, 14 UNION ALL
+  SELECT 'WUV', 'WUV', 0, 15 UNION ALL
+  SELECT 'XUV', 'XUV', 0, 16
 ) AS defaults
 WHERE NOT EXISTS (SELECT 1 FROM category_mappings);
+
+INSERT INTO category_mappings (pattern, mapped_category, is_regex, priority)
+SELECT 'SCH', 'SCH', 0, 2
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM category_mappings
+  WHERE UPPER(mapped_category) = 'SCH'
+);
 
 CREATE TABLE IF NOT EXISTS results (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -84,6 +93,8 @@ CREATE TABLE IF NOT EXISTS results (
   final_score_scaled DECIMAL(10,2) NULL,
   mj_raw DECIMAL(10,2) NULL,
   mj_scaled DECIMAL(10,2) NULL,
+  sch_raw DECIMAL(10,2) NULL,
+  sch_scaled DECIMAL(10,2) NULL,
   wj_raw DECIMAL(10,2) NULL,
   wj_scaled DECIMAL(10,2) NULL,
   xj_raw DECIMAL(10,2) NULL,
@@ -117,6 +128,36 @@ CREATE TABLE IF NOT EXISTS results (
   CONSTRAINT fk_results_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
   INDEX idx_results_event_id (event_id)
 );
+
+SET @add_sch_raw = IF(
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'results'
+      AND column_name = 'sch_raw'
+  ),
+  'SELECT 1',
+  'ALTER TABLE results ADD COLUMN sch_raw DECIMAL(10,2) NULL AFTER mj_scaled'
+);
+PREPARE stmt FROM @add_sch_raw;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @add_sch_scaled = IF(
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'results'
+      AND column_name = 'sch_scaled'
+  ),
+  'SELECT 1',
+  'ALTER TABLE results ADD COLUMN sch_scaled DECIMAL(10,2) NULL AFTER sch_raw'
+);
+PREPARE stmt FROM @add_sch_scaled;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS teams (
   id INT AUTO_INCREMENT PRIMARY KEY,

@@ -109,7 +109,7 @@ const categoryMappingConfigErrorMessage = ref('');
 const categoryMappingConfigSaving = ref(false);
 const categoryMappingConfigSuccessMessage = ref('');
 const currentRawEventGrades = ref([]);
-const fixedCategoryColumns = ['MJ', 'WJ', 'XJ', 'MO', 'WO', 'XO', 'MV', 'WV', 'XV', 'MSV', 'WSV', 'XSV', 'MUV', 'WUV', 'XUV'];
+const fixedCategoryColumns = ['SCH', 'MJ', 'WJ', 'XJ', 'MO', 'WO', 'XO', 'MV', 'WV', 'XV', 'MSV', 'WSV', 'XSV', 'MUV', 'WUV', 'XUV'];
 const leaderBoards = ref([]);
 const leaderBoardsLoading = ref(false);
 const leaderBoardsErrorMessage = ref('');
@@ -1240,6 +1240,7 @@ async function loadSelectedEventResults() {
       raw: {
         final_score: Number(item?.final_score_raw ?? 0),
         MJ: Number(item?.mj_raw ?? 0),
+        SCH: Number(item?.sch_raw ?? 0),
         WJ: Number(item?.wj_raw ?? 0),
         XJ: Number(item?.xj_raw ?? 0),
         MO: Number(item?.mo_raw ?? 0),
@@ -1258,6 +1259,7 @@ async function loadSelectedEventResults() {
       scaled: {
         final_score: Number(item?.final_score_scaled ?? 0),
         MJ: Number(item?.mj_scaled ?? 0),
+        SCH: Number(item?.sch_scaled ?? 0),
         WJ: Number(item?.wj_scaled ?? 0),
         XJ: Number(item?.xj_scaled ?? 0),
         MO: Number(item?.mo_scaled ?? 0),
@@ -1488,6 +1490,7 @@ async function createLeaderBoardScoreView(leaderBoard, { historyMode } = {}) {
         event_count: Number(item?.event_count ?? 0),
         final_score: Number(item?.final_score_raw ?? 0),
         MJ: Number(item?.mj_raw ?? 0),
+        SCH: Number(item?.sch_raw ?? 0),
         WJ: Number(item?.wj_raw ?? 0),
         XJ: Number(item?.xj_raw ?? 0),
         MO: Number(item?.mo_raw ?? 0),
@@ -1508,6 +1511,7 @@ async function createLeaderBoardScoreView(leaderBoard, { historyMode } = {}) {
         event_count: Number(item?.event_count ?? 0),
         final_score: Number(item?.final_score_scaled ?? 0),
         MJ: Number(item?.mj_scaled ?? 0),
+        SCH: Number(item?.sch_scaled ?? 0),
         WJ: Number(item?.wj_scaled ?? 0),
         XJ: Number(item?.xj_scaled ?? 0),
         MO: Number(item?.mo_scaled ?? 0),

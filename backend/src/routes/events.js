@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-const fixedCategoryColumns = ['MJ', 'WJ', 'XJ', 'MO', 'WO', 'XO', 'MV', 'WV', 'XV', 'MSV', 'WSV', 'XSV', 'MUV', 'WUV', 'XUV'];
+const fixedCategoryColumns = ['MJ', 'SCH', 'WJ', 'XJ', 'MO', 'WO', 'XO', 'MV', 'WV', 'XV', 'MSV', 'WSV', 'XSV', 'MUV', 'WUV', 'XUV'];
 
 function toNullableNumber(value) {
   if (value === '' || value === null || value === undefined) {
@@ -74,6 +74,7 @@ router.get('/:eventId/results', async (req, res) => {
          final_score_raw,
          final_score_scaled,
          mj_raw, mj_scaled,
+         sch_raw, sch_scaled,
          wj_raw, wj_scaled,
          xj_raw, xj_scaled,
          mo_raw, mo_scaled,
@@ -308,6 +309,8 @@ router.post('/:eventId/transformed-results', requireAuth, async (req, res) => {
 
     await connection.query('DELETE FROM results WHERE event_id = ?', [eventId]);
 
+    const categoryValuePlaceholders = fixedCategoryColumns.map(() => '?, ?').join(', ');
+
     const insertSql = `INSERT INTO results (
       event_id,
       team_name,
@@ -315,6 +318,7 @@ router.post('/:eventId/transformed-results', requireAuth, async (req, res) => {
       final_score_raw,
       final_score_scaled,
       mj_raw, mj_scaled,
+      sch_raw, sch_scaled,
       wj_raw, wj_scaled,
       xj_raw, xj_scaled,
       mo_raw, mo_scaled,
@@ -331,7 +335,7 @@ router.post('/:eventId/transformed-results', requireAuth, async (req, res) => {
       xuv_raw, xuv_scaled
     ) VALUES (
       ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ${categoryValuePlaceholders}
     )`;
 
     for (const row of rows) {
