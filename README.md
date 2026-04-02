@@ -72,6 +72,67 @@ Mobile leaderboards-only view (phone-friendly):
 - Optional force-mobile URL: `http://localhost:5173/?mobile=1`
 - Optional force-desktop URL: `http://localhost:5173/?mobile=0`
 
+## Run frontend/backend locally against the production MySQL database
+
+Use an SSH tunnel instead of connecting to the droplet's MySQL port directly.
+
+One-command Windows launcher from repo root:
+
+```powershell
+npm run dev:prod-db
+```
+
+This starts the tunnel and then runs the existing local frontend/backend dev stack.
+
+To pass tunnel parameters through npm:
+
+```powershell
+npm run dev:prod-db -- -DropletUser ubuntu -IdentityFile ~/.ssh/id_ed25519
+```
+
+1. Open a terminal and start the tunnel from repo root:
+
+```powershell
+./deploy/open-prod-db-tunnel.ps1
+```
+
+Optional parameters:
+
+- `-DropletUser ubuntu`
+- `-IdentityFile ~/.ssh/id_ed25519`
+- `-LocalPort 3307`
+
+2. Point the local backend at the tunneled port by setting `backend/.env` like this:
+
+```env
+PORT=3000
+DB_HOST=127.0.0.1
+DB_PORT=3307
+DB_USER=<prod_app_user>
+DB_PASSWORD=<prod_app_password>
+DB_NAME=rogainizer
+AUTH_USERNAME=<local_admin_user>
+AUTH_PASSWORD=<local_admin_password>
+AUTH_SECRET=<local_auth_secret>
+AUTH_TTL_HOURS=12
+```
+
+Use the production app DB credentials from `.env.notes` or the maintainer-managed production env.
+
+3. Start the local app from repo root:
+
+```bash
+npm run dev
+```
+
+This gives you:
+
+- Frontend: `http://localhost:5173`
+- Local backend: `http://localhost:3000`
+- Database path: `127.0.0.1:3307` -> SSH tunnel -> prod droplet MySQL
+
+If you want to inspect the production database directly from a local MySQL client, connect it to host `127.0.0.1`, port `3307`, using the same app credentials.
+
 ## Run with Docker Compose
 
 From repo root:

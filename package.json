@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:prod-db": "powershell -ExecutionPolicy Bypass -File ./deploy/start-local-with-prod-db.ps1",
     "dev:api": "npm run dev --prefix backend",
     "dev:web": "npm run dev --prefix frontend",
     "dev:web:remote-api": "npm run dev:remote-api --prefix frontend",
