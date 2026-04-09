@@ -144,8 +144,10 @@ const selectedResultsEvent = ref(null);
 const eventResultsRows = ref([]);
 const eventResultsLoading = ref(false);
 const eventResultsErrorMessage = ref('');
+const eventResultsSuccessMessage = ref('');
 const eventResultsDisplayMode = ref('scaled');
 const showOnlyFlaggedResultMembers = ref(false);
+const bulkDeleteSingleNameResultsLoading = ref(false);
 const showEditResultDialog = ref(false);
 const editResultId = ref(null);
 const editResultTeamName = ref('');
@@ -414,6 +416,10 @@ const filteredEventResultsRows = computed(() => {
 
   return displayedEventResultsRows.value.filter((row) => shouldHighlightMemberName(row.team_member));
 });
+
+const singleNameEventResultsCount = computed(() =>
+  eventResultsRows.value.filter((row) => isSingleNameMemberName(row.team_member)).length
+);
 
 const selectedEventDuration = computed(() => {
   const duration = Number(jsonLoadData.value?.event_duration);
@@ -1165,11 +1171,19 @@ function formatResultCell(row, column) {
   return numericValue;
 }
 
-function shouldHighlightMemberName(memberName) {
-  const words = String(memberName || '')
+function getMemberNameWords(memberName) {
+  return String(memberName || '')
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function isSingleNameMemberName(memberName) {
+  return getMemberNameWords(memberName).length === 1;
+}
+
+function shouldHighlightMemberName(memberName) {
+  const words = getMemberNameWords(memberName);
 
   if (words.length === 0) {
     return false;
@@ -1213,6 +1227,7 @@ async function fetchResultsEvents() {
 async function loadSelectedEventResults() {
   const eventId = Number(selectedResultsEventId.value);
   eventResultsErrorMessage.value = '';
+  eventResultsSuccessMessage.value = '';
   eventResultsRows.value = [];
   selectedResultsEvent.value = null;
 
@@ -1377,6 +1392,7 @@ async function deleteResultRow(row) {
   }
 
   eventResultsErrorMessage.value = '';
+  eventResultsSuccessMessage.value = '';
 
   try {
     const response = await fetchWithAuth(`${apiBaseUrl}/api/events/${eventId}/results/${resultId}`, {
@@ -1391,6 +1407,55 @@ async function deleteResultRow(row) {
     await loadSelectedEventResults();
   } catch (error) {
     eventResultsErrorMessage.value = error.message || 'Failed to delete result row';
+  }
+}
+
+async function deleteSingleNameResultRows() {
+  if (!isLoggedIn.value) {
+    openLoginDialog();
+    return;
+  }
+
+  if (bulkDeleteSingleNameResultsLoading.value) {
+    return;
+  }
+
+  const eventId = Number(selectedResultsEventId.value);
+  const singleNameCount = singleNameEventResultsCount.value;
+
+  if (!Number.isInteger(eventId) || eventId <= 0 || singleNameCount === 0) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Delete ${singleNameCount} result row${singleNameCount === 1 ? '' : 's'} where the member is a single name?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  bulkDeleteSingleNameResultsLoading.value = true;
+  eventResultsErrorMessage.value = '';
+  eventResultsSuccessMessage.value = '';
+
+  try {
+    const response = await fetchWithAuth(`${apiBaseUrl}/api/events/${eventId}/results/delete-single-name-members`, {
+      method: 'DELETE'
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to delete single-name result rows');
+    }
+
+    await loadSelectedEventResults();
+    eventResultsSuccessMessage.value = data.message || 'Single-name result rows deleted successfully.';
+  } catch (error) {
+    eventResultsErrorMessage.value = error.message || 'Failed to delete single-name result rows';
+  } finally {
+    bulkDeleteSingleNameResultsLoading.value = false;
   }
 }
 
@@ -2537,10 +2602,20 @@ onBeforeUnmount(() => {
           <input v-model="showOnlyFlaggedResultMembers" type="checkbox" />
           Flagged only
         </label>
+        <button
+          v-if="isLoggedIn"
+          type="button"
+          class="action-button danger-button rounded-md border border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500"
+          @click="deleteSingleNameResultRows"
+          :disabled="eventResultsLoading || bulkDeleteSingleNameResultsLoading || singleNameEventResultsCount === 0"
+        >
+          {{ bulkDeleteSingleNameResultsLoading ? 'Deleting...' : `Delete single-name members (${singleNameEventResultsCount})` }}
+        </button>
       </div>
 
       <p v-if="eventResultsLoading">Loading results...</p>
       <p v-if="eventResultsErrorMessage" class="error">{{ eventResultsErrorMessage }}</p>
+      <p v-if="eventResultsSuccessMessage" class="success">{{ eventResultsSuccessMessage }}</p>
 
       <table v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" class="events-table transformed-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
         <thead>

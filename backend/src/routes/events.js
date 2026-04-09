@@ -15,6 +15,15 @@ function toNullableNumber(value) {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+async function ensureEventExists(eventId) {
+  const [eventRows] = await pool.query(
+    'SELECT id FROM events WHERE id = ? LIMIT 1',
+    [eventId]
+  );
+
+  return Boolean(eventRows[0]);
+}
+
 router.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query(
@@ -96,6 +105,47 @@ router.get('/:eventId/results', async (req, res) => {
     );
 
     return res.json({ event, rows });
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({
+        message: 'Required tables do not exist. Run backend/sql/init.sql first.'
+      });
+    }
+
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+router.delete('/:eventId/results/delete-single-name-members', requireAuth, async (req, res) => {
+  const eventId = Number(req.params.eventId);
+
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return res.status(400).json({ message: 'eventId must be a positive integer' });
+  }
+
+  try {
+    const eventExists = await ensureEventExists(eventId);
+    if (!eventExists) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const [result] = await pool.query(
+      `DELETE FROM results
+       WHERE event_id = ?
+         AND team_member IS NOT NULL
+         AND TRIM(team_member) <> ''
+         AND TRIM(team_member) NOT REGEXP '[[:space:]]'`,
+      [eventId]
+    );
+
+    const deletedCount = Number(result?.affectedRows ?? 0);
+
+    return res.json({
+      message: deletedCount > 0
+        ? `Deleted ${deletedCount} single-name result row${deletedCount === 1 ? '' : 's'}.`
+        : 'No single-name result rows found for this event.',
+      deletedCount
+    });
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({

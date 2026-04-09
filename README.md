@@ -133,6 +133,14 @@ This gives you:
 
 If you want to inspect the production database directly from a local MySQL client, connect it to host `127.0.0.1`, port `3307`, using the same app credentials.
 
+To create a local backup file from the production database on Windows:
+
+```powershell
+./deploy/backup-prod-db-local.ps1 -IdentityFile C:/Users/dougl/.ssh/rogainizer-prod
+```
+
+By default this downloads the backup into `deploy/backups` and removes the temporary remote file after download.
+
 ## Run with Docker Compose
 
 From repo root:
