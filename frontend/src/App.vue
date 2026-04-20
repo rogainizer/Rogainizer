@@ -124,8 +124,6 @@ const leaderBoardScoreSortDirection = ref('desc');
 const leaderBoardMemberSearch = ref('');
 const leaderBoardMatchIndexes = ref([]);
 const activeLeaderBoardMatchPosition = ref(-1);
-const leaderBoardDesktopRowRefs = ref([]);
-const leaderBoardMobileRowRefs = ref([]);
 const leaderBoardDesktopTableContainerRef = ref(null);
 const leaderBoardMobileTableContainerRef = ref(null);
 const showLeaderBoardMemberDialog = ref(false);
@@ -158,7 +156,6 @@ const eventResultsSortDirection = ref('desc');
 const eventResultsMemberSearch = ref('');
 const eventResultsMatchIndexes = ref([]);
 const activeEventResultsMatchPosition = ref(-1);
-const eventResultsRowRefs = ref([]);
 const eventResultsTableContainerRef = ref(null);
 const showOnlyFlaggedResultMembers = ref(false);
 const bulkDeleteSingleNameResultsLoading = ref(false);
@@ -895,55 +892,35 @@ function refreshLeaderBoardMemberSearchState() {
   }
 }
 
-function setIndexedRowRef(target, rowIndex, element) {
-  const targetList = Array.isArray(target)
-    ? target
-    : target?.value;
-
-  if (!Array.isArray(targetList)) {
-    return;
-  }
-
-  if (element) {
-    targetList[rowIndex] = element;
-    return;
-  }
-
-  targetList[rowIndex] = null;
-}
-
 function visibleLeaderBoardTableContainerRef() {
   return isMobileLeaderBoardsOnlyMode.value ? leaderBoardMobileTableContainerRef : leaderBoardDesktopTableContainerRef;
 }
 
-async function scrollToMatchedRow(rowRefs, rowIndex, containerRef = null) {
-  await nextTick();
+function waitForPaint() {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve();
+      return;
+    }
 
-  const rowElement = rowRefs.value[rowIndex];
-  if (!(rowElement instanceof HTMLElement)) {
-    return;
-  }
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+async function scrollToMatchedRow(rowIndex, containerRef = null) {
+  await nextTick();
+  await waitForPaint();
 
   const scrollContainer = containerRef?.value instanceof HTMLElement
     ? containerRef.value
-    : rowElement.closest('.table-scroll-container');
+    : null;
 
-  if (scrollContainer instanceof HTMLElement) {
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const rowRect = rowElement.getBoundingClientRect();
-    const targetScrollTop = scrollContainer.scrollTop + (rowRect.top - containerRect.top) - (scrollContainer.clientHeight / 2) + (rowRect.height / 2);
-    scrollContainer.scrollTo({
-      top: Math.max(targetScrollTop, 0),
-      behavior: 'smooth'
-    });
+  if (!(scrollContainer instanceof HTMLElement)) {
+    return;
+  }
 
-    const targetScrollLeft = scrollContainer.scrollLeft + (rowRect.left - containerRect.left) - 24;
-    if (Math.abs(targetScrollLeft - scrollContainer.scrollLeft) > 1) {
-      scrollContainer.scrollTo({
-        left: Math.max(targetScrollLeft, 0),
-        behavior: 'smooth'
-      });
-    }
+  const rowElement = scrollContainer.querySelector(`[data-search-row-index="${rowIndex}"]`);
+  if (!(rowElement instanceof HTMLElement)) {
     return;
   }
 
@@ -952,10 +929,6 @@ async function scrollToMatchedRow(rowRefs, rowIndex, containerRef = null) {
     block: 'center',
     inline: 'nearest'
   });
-}
-
-function visibleLeaderBoardRowRefs() {
-  return isMobileLeaderBoardsOnlyMode.value ? leaderBoardMobileRowRefs : leaderBoardDesktopRowRefs;
 }
 
 async function searchEventResultsMembers({ advance = false } = {}) {
@@ -971,7 +944,7 @@ async function searchEventResultsMembers({ advance = false } = {}) {
     ? (activeEventResultsMatchPosition.value + 1) % matches.length
     : 0;
 
-  await scrollToMatchedRow(eventResultsRowRefs, matches[activeEventResultsMatchPosition.value], eventResultsTableContainerRef);
+  await scrollToMatchedRow(matches[activeEventResultsMatchPosition.value], eventResultsTableContainerRef);
 }
 
 async function searchLeaderBoardMembers({ advance = false } = {}) {
@@ -987,11 +960,7 @@ async function searchLeaderBoardMembers({ advance = false } = {}) {
     ? (activeLeaderBoardMatchPosition.value + 1) % matches.length
     : 0;
 
-  await scrollToMatchedRow(
-    visibleLeaderBoardRowRefs(),
-    matches[activeLeaderBoardMatchPosition.value],
-    visibleLeaderBoardTableContainerRef()
-  );
+  await scrollToMatchedRow(matches[activeLeaderBoardMatchPosition.value], visibleLeaderBoardTableContainerRef());
 }
 
 function isEventResultsMatchedRow(rowIndex) {
@@ -1222,8 +1191,6 @@ function closeLeaderBoardEventsDialog() {
 function resetLeaderBoardSelectionScreen() {
   activeLeaderBoard.value = null;
   leaderBoardScoresRows.value = [];
-  leaderBoardDesktopRowRefs.value = [];
-  leaderBoardMobileRowRefs.value = [];
   resetLeaderBoardMemberSearch();
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresLoading.value = false;
@@ -1743,7 +1710,6 @@ async function deleteSingleNameResultRows() {
 }
 
 watch(selectedResultsEventId, () => {
-  eventResultsRowRefs.value = [];
   resetEventResultsMemberSearch();
   if (currentView.value === 'results') {
     loadSelectedEventResults();
@@ -1818,8 +1784,6 @@ async function createLeaderBoardScoreView(leaderBoard, { historyMode } = {}) {
   }
 
   leaderBoardScoresRows.value = [];
-  leaderBoardDesktopRowRefs.value = [];
-  leaderBoardMobileRowRefs.value = [];
   resetLeaderBoardMemberSearch();
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresShowRaw.value = false;
@@ -2936,7 +2900,7 @@ onBeforeUnmount(() => {
             <tr
               v-for="(row, rowIndex) in sortedEventResultsRows"
               :key="`event-results-row-${row.id || rowIndex}`"
-              :ref="(element) => setIndexedRowRef(eventResultsRowRefs, rowIndex, element)"
+              :data-search-row-index="rowIndex"
               :class="{
                 'search-match-row': isEventResultsMatchedRow(rowIndex),
                 'active-search-match-row': isActiveEventResultsMatchedRow(rowIndex)
@@ -3081,7 +3045,7 @@ onBeforeUnmount(() => {
                 <tr
                   v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
                   :key="`mobile-leader-board-score-row-${rowIndex}`"
-                  :ref="(element) => setIndexedRowRef(leaderBoardMobileRowRefs, rowIndex, element)"
+                  :data-search-row-index="rowIndex"
                   :class="{
                     'search-match-row': isLeaderBoardMatchedRow(rowIndex),
                     'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
@@ -3226,7 +3190,7 @@ onBeforeUnmount(() => {
                   <tr
                     v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
                     :key="`leader-board-score-row-${rowIndex}`"
-                    :ref="(element) => setIndexedRowRef(leaderBoardDesktopRowRefs, rowIndex, element)"
+                    :data-search-row-index="rowIndex"
                     :class="{
                       'search-match-row': isLeaderBoardMatchedRow(rowIndex),
                       'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
