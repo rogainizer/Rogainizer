@@ -126,6 +126,8 @@ const leaderBoardMatchIndexes = ref([]);
 const activeLeaderBoardMatchPosition = ref(-1);
 const leaderBoardDesktopRowRefs = ref([]);
 const leaderBoardMobileRowRefs = ref([]);
+const leaderBoardDesktopTableContainerRef = ref(null);
+const leaderBoardMobileTableContainerRef = ref(null);
 const showLeaderBoardMemberDialog = ref(false);
 const selectedLeaderBoardMember = ref('');
 const leaderBoardMemberEventRows = ref([]);
@@ -157,6 +159,7 @@ const eventResultsMemberSearch = ref('');
 const eventResultsMatchIndexes = ref([]);
 const activeEventResultsMatchPosition = ref(-1);
 const eventResultsRowRefs = ref([]);
+const eventResultsTableContainerRef = ref(null);
 const showOnlyFlaggedResultMembers = ref(false);
 const bulkDeleteSingleNameResultsLoading = ref(false);
 const showEditResultDialog = ref(false);
@@ -901,11 +904,40 @@ function setIndexedRowRef(target, rowIndex, element) {
   target.value[rowIndex] = null;
 }
 
-async function scrollToMatchedRow(rowRefs, rowIndex) {
+function visibleLeaderBoardTableContainerRef() {
+  return isMobileLeaderBoardsOnlyMode.value ? leaderBoardMobileTableContainerRef : leaderBoardDesktopTableContainerRef;
+}
+
+async function scrollToMatchedRow(rowRefs, rowIndex, containerRef = null) {
   await nextTick();
 
   const rowElement = rowRefs.value[rowIndex];
   if (!(rowElement instanceof HTMLElement)) {
+    return;
+  }
+
+  const scrollContainer = containerRef?.value instanceof HTMLElement
+    ? containerRef.value
+    : rowElement.closest('.table-scroll-container');
+
+  if (scrollContainer instanceof HTMLElement) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const rowRect = rowElement.getBoundingClientRect();
+    const currentScrollTop = scrollContainer.scrollTop;
+    const targetScrollTop = currentScrollTop + (rowRect.top - containerRect.top) - (containerRect.height / 2) + (rowRect.height / 2);
+    scrollContainer.scrollTo({
+      top: Math.max(targetScrollTop, 0),
+      behavior: 'smooth'
+    });
+
+    const currentScrollLeft = scrollContainer.scrollLeft;
+    const targetScrollLeft = currentScrollLeft + (rowRect.left - containerRect.left) - 24;
+    if (Math.abs(targetScrollLeft - currentScrollLeft) > 1) {
+      scrollContainer.scrollTo({
+        left: Math.max(targetScrollLeft, 0),
+        behavior: 'smooth'
+      });
+    }
     return;
   }
 
@@ -933,7 +965,7 @@ async function searchEventResultsMembers({ advance = false } = {}) {
     ? (activeEventResultsMatchPosition.value + 1) % matches.length
     : 0;
 
-  await scrollToMatchedRow(eventResultsRowRefs, matches[activeEventResultsMatchPosition.value]);
+  await scrollToMatchedRow(eventResultsRowRefs, matches[activeEventResultsMatchPosition.value], eventResultsTableContainerRef);
 }
 
 async function searchLeaderBoardMembers({ advance = false } = {}) {
@@ -949,7 +981,11 @@ async function searchLeaderBoardMembers({ advance = false } = {}) {
     ? (activeLeaderBoardMatchPosition.value + 1) % matches.length
     : 0;
 
-  await scrollToMatchedRow(visibleLeaderBoardRowRefs(), matches[activeLeaderBoardMatchPosition.value]);
+  await scrollToMatchedRow(
+    visibleLeaderBoardRowRefs(),
+    matches[activeLeaderBoardMatchPosition.value],
+    visibleLeaderBoardTableContainerRef()
+  );
 }
 
 function isEventResultsMatchedRow(rowIndex) {
@@ -2877,45 +2913,47 @@ onBeforeUnmount(() => {
       <p v-if="eventResultsErrorMessage" class="error">{{ eventResultsErrorMessage }}</p>
       <p v-if="eventResultsSuccessMessage" class="success">{{ eventResultsSuccessMessage }}</p>
 
-      <table v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" class="events-table transformed-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
-        <thead>
-          <tr>
-            <th
-              v-for="column in eventResultsColumns"
-              :key="`event-results-header-${column}`"
-              class="sortable-header"
-              @click="sortEventResultsBy(column)"
-            >{{ transformedColumnLabel(column) }}{{ eventResultsSortIndicator(column) }}</th>
-            <th v-if="isLoggedIn">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="(row, rowIndex) in sortedEventResultsRows"
-            :key="`event-results-row-${row.id || rowIndex}`"
-            :ref="(element) => setIndexedRowRef(eventResultsRowRefs, rowIndex, element)"
-            :class="{
-              'search-match-row': isEventResultsMatchedRow(rowIndex),
-              'active-search-match-row': isActiveEventResultsMatchedRow(rowIndex)
-            }"
-          >
-            <td
-              v-for="column in eventResultsColumns"
-              :key="`event-results-cell-${rowIndex}-${column}`"
+      <div v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" ref="eventResultsTableContainerRef" class="table-scroll-container">
+        <table class="events-table transformed-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
+          <thead>
+            <tr>
+              <th
+                v-for="column in eventResultsColumns"
+                :key="`event-results-header-${column}`"
+                class="sortable-header"
+                @click="sortEventResultsBy(column)"
+              >{{ transformedColumnLabel(column) }}{{ eventResultsSortIndicator(column) }}</th>
+              <th v-if="isLoggedIn">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, rowIndex) in sortedEventResultsRows"
+              :key="`event-results-row-${row.id || rowIndex}`"
+              :ref="(element) => setIndexedRowRef(eventResultsRowRefs, rowIndex, element)"
               :class="{
-                'scaled-score-cell': eventResultsDisplayMode === 'scaled' && column !== 'team_name' && column !== 'team_member',
-                'result-member-warning': column === 'team_member' && shouldHighlightMemberName(row.team_member)
+                'search-match-row': isEventResultsMatchedRow(rowIndex),
+                'active-search-match-row': isActiveEventResultsMatchedRow(rowIndex)
               }"
             >
-              {{ formatResultCell(row, column) }}
-            </td>
-            <td v-if="isLoggedIn" class="action-cell whitespace-nowrap">
-              <button type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditResultDialog(row)">Edit</button>
-              <button type="button" class="action-button danger-button rounded-md border border-red-600 bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700" @click="deleteResultRow(row)">Delete</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <td
+                v-for="column in eventResultsColumns"
+                :key="`event-results-cell-${rowIndex}-${column}`"
+                :class="{
+                  'scaled-score-cell': eventResultsDisplayMode === 'scaled' && column !== 'team_name' && column !== 'team_member',
+                  'result-member-warning': column === 'team_member' && shouldHighlightMemberName(row.team_member)
+                }"
+              >
+                {{ formatResultCell(row, column) }}
+              </td>
+              <td v-if="isLoggedIn" class="action-cell whitespace-nowrap">
+                <button type="button" class="action-button mr-2 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="openEditResultDialog(row)">Edit</button>
+                <button type="button" class="action-button danger-button rounded-md border border-red-600 bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700" @click="deleteResultRow(row)">Delete</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p v-else-if="!eventResultsLoading" class="empty-state">No saved results for this event.</p>
     </section>
 
@@ -3016,7 +3054,7 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="mobile-score-table-wrap">
+          <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" ref="leaderBoardMobileTableContainerRef" class="mobile-score-table-wrap table-scroll-container">
             <table class="events-table transformed-table mobile-score-table leader-board-score-table">
               <thead>
                 <tr>
@@ -3161,52 +3199,54 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <table v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="events-table transformed-table leader-board-score-table">
-              <thead>
-                <tr>
-                  <th
-                    v-for="column in leaderBoardScoreColumns"
-                    :key="`leader-board-score-header-${column}`"
+            <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" ref="leaderBoardDesktopTableContainerRef" class="table-scroll-container">
+              <table class="events-table transformed-table leader-board-score-table">
+                <thead>
+                  <tr>
+                    <th
+                      v-for="column in leaderBoardScoreColumns"
+                      :key="`leader-board-score-header-${column}`"
+                      :class="{
+                        'sortable-header': isLeaderBoardScoreColumn(column),
+                        'sticky-member-column-header': column === 'team_member'
+                      }"
+                      @click="sortLeaderBoardScoresBy(column)"
+                    >
+                      {{ leaderBoardColumnLabel(column) }}{{ leaderBoardSortIndicator(column) }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
+                    :key="`leader-board-score-row-${rowIndex}`"
+                    :ref="(element) => setIndexedRowRef(leaderBoardDesktopRowRefs, rowIndex, element)"
                     :class="{
-                      'sortable-header': isLeaderBoardScoreColumn(column),
-                      'sticky-member-column-header': column === 'team_member'
+                      'search-match-row': isLeaderBoardMatchedRow(rowIndex),
+                      'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
                     }"
-                    @click="sortLeaderBoardScoresBy(column)"
                   >
-                    {{ leaderBoardColumnLabel(column) }}{{ leaderBoardSortIndicator(column) }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
-                  :key="`leader-board-score-row-${rowIndex}`"
-                  :ref="(element) => setIndexedRowRef(leaderBoardDesktopRowRefs, rowIndex, element)"
-                  :class="{
-                    'search-match-row': isLeaderBoardMatchedRow(rowIndex),
-                    'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
-                  }"
-                >
-                  <td
-                    v-for="column in leaderBoardScoreColumns"
-                    :key="`leader-board-score-cell-${rowIndex}-${column}`"
-                    :class="{
-                      'scaled-score-cell': !leaderBoardScoresShowRaw && column !== 'team_name' && column !== 'team_member',
-                      'member-cell': column === 'team_member',
-                      'sticky-member-column-cell': column === 'team_member'
-                    }"
-                    @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
-                  >
-                    <span
-                      v-if="column === 'team_member'"
-                      class="member-cell-text"
-                      :title="String(row.team_member || '')"
-                    >{{ row.team_member }}</span>
-                    <template v-else>{{ formatLeaderBoardScoreCell(row, column) }}</template>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    <td
+                      v-for="column in leaderBoardScoreColumns"
+                      :key="`leader-board-score-cell-${rowIndex}-${column}`"
+                      :class="{
+                        'scaled-score-cell': !leaderBoardScoresShowRaw && column !== 'team_name' && column !== 'team_member',
+                        'member-cell': column === 'team_member',
+                        'sticky-member-column-cell': column === 'team_member'
+                      }"
+                      @click="column === 'team_member' ? openLeaderBoardMemberDialog(row) : null"
+                    >
+                      <span
+                        v-if="column === 'team_member'"
+                        class="member-cell-text"
+                        :title="String(row.team_member || '')"
+                      >{{ row.team_member }}</span>
+                      <template v-else>{{ formatLeaderBoardScoreCell(row, column) }}</template>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-else-if="!leaderBoardScoresLoading" class="empty-state">No scores found for this leader board.</p>
           </div>
         </div>
@@ -3659,6 +3699,10 @@ button.plain-button {
 
 .events-table {
   @apply my-2 w-full border-collapse overflow-hidden rounded-md bg-white;
+}
+
+.table-scroll-container {
+  @apply max-h-[70vh] overflow-auto;
 }
 
 .events-table th,
