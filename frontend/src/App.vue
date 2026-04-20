@@ -896,12 +896,20 @@ function refreshLeaderBoardMemberSearchState() {
 }
 
 function setIndexedRowRef(target, rowIndex, element) {
-  if (element) {
-    target.value[rowIndex] = element;
+  const targetList = Array.isArray(target)
+    ? target
+    : target?.value;
+
+  if (!Array.isArray(targetList)) {
     return;
   }
 
-  target.value[rowIndex] = null;
+  if (element) {
+    targetList[rowIndex] = element;
+    return;
+  }
+
+  targetList[rowIndex] = null;
 }
 
 function visibleLeaderBoardTableContainerRef() {
