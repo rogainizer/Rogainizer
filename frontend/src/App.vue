@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import JsonTreeNode from './components/JsonTreeNode.vue';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -121,6 +121,11 @@ const leaderBoardScoresShowRaw = ref(false);
 const leaderBoardScoresShowRank = ref(false);
 const leaderBoardScoreSortColumn = ref('final_score');
 const leaderBoardScoreSortDirection = ref('desc');
+const leaderBoardMemberSearch = ref('');
+const leaderBoardMatchIndexes = ref([]);
+const activeLeaderBoardMatchPosition = ref(-1);
+const leaderBoardDesktopRowRefs = ref([]);
+const leaderBoardMobileRowRefs = ref([]);
 const showLeaderBoardMemberDialog = ref(false);
 const selectedLeaderBoardMember = ref('');
 const leaderBoardMemberEventRows = ref([]);
@@ -148,12 +153,17 @@ const eventResultsSuccessMessage = ref('');
 const eventResultsDisplayMode = ref('scaled');
 const eventResultsSortColumn = ref('final_score');
 const eventResultsSortDirection = ref('desc');
+const eventResultsMemberSearch = ref('');
+const eventResultsMatchIndexes = ref([]);
+const activeEventResultsMatchPosition = ref(-1);
+const eventResultsRowRefs = ref([]);
 const showOnlyFlaggedResultMembers = ref(false);
 const bulkDeleteSingleNameResultsLoading = ref(false);
 const showEditResultDialog = ref(false);
 const editResultId = ref(null);
 const editResultTeamName = ref('');
 const editResultTeamMember = ref('');
+const editResultCategory = ref('');
 const editResultLoading = ref(false);
 const editResultErrorMessage = ref('');
 const showEditLeaderBoardDialog = ref(false);
@@ -406,6 +416,7 @@ const displayedEventResultsRows = computed(() =>
       id: row.id,
       team_name: row.team_name,
       team_member: row.team_member,
+      category: detectResultCategory(row),
       ...modeValues
     };
   })
@@ -442,6 +453,9 @@ const sortedEventResultsRows = computed(() => {
 const singleNameEventResultsCount = computed(() =>
   eventResultsRows.value.filter((row) => isSingleNameMemberName(row.team_member)).length
 );
+
+const eventResultsMatchCount = computed(() => eventResultsMatchIndexes.value.length);
+const leaderBoardMatchCount = computed(() => leaderBoardMatchIndexes.value.length);
 
 const selectedEventDuration = computed(() => {
   const duration = Number(jsonLoadData.value?.event_duration);
@@ -484,6 +498,26 @@ watch(newLeaderBoardYear, () => {
 watch(editLeaderBoardYear, () => {
   if (showEditLeaderBoardDialog.value && !editLeaderBoardLoadingDetails.value) {
     fetchEditLeaderBoardYearResults();
+  }
+});
+
+watch(sortedEventResultsRows, () => {
+  refreshEventResultsMemberSearchState();
+}, { deep: true });
+
+watch(sortedLeaderBoardScoreRows, () => {
+  refreshLeaderBoardMemberSearchState();
+}, { deep: true });
+
+watch(eventResultsMemberSearch, (value) => {
+  if (!normalizeMemberSearchQuery(value)) {
+    resetEventResultsMemberSearch();
+  }
+});
+
+watch(leaderBoardMemberSearch, (value) => {
+  if (!normalizeMemberSearchQuery(value)) {
+    resetLeaderBoardMemberSearch();
   }
 });
 
@@ -801,6 +835,158 @@ function isEventResultsTextColumn(column) {
   return column === 'team_name' || column === 'team_member';
 }
 
+function normalizeMemberSearchQuery(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function findMemberMatchIndexes(rows, query) {
+  const normalizedQuery = normalizeMemberSearchQuery(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  return rows.reduce((matches, row, rowIndex) => {
+    const memberName = String(row?.team_member || '').trim().toLowerCase();
+    if (memberName.includes(normalizedQuery)) {
+      matches.push(rowIndex);
+    }
+    return matches;
+  }, []);
+}
+
+function resetEventResultsMemberSearch() {
+  eventResultsMatchIndexes.value = [];
+  activeEventResultsMatchPosition.value = -1;
+}
+
+function resetLeaderBoardMemberSearch() {
+  leaderBoardMatchIndexes.value = [];
+  activeLeaderBoardMatchPosition.value = -1;
+}
+
+function refreshEventResultsMemberSearchState() {
+  const matches = findMemberMatchIndexes(sortedEventResultsRows.value, eventResultsMemberSearch.value);
+  eventResultsMatchIndexes.value = matches;
+
+  if (matches.length === 0) {
+    activeEventResultsMatchPosition.value = -1;
+    return;
+  }
+
+  if (activeEventResultsMatchPosition.value < 0 || activeEventResultsMatchPosition.value >= matches.length) {
+    activeEventResultsMatchPosition.value = 0;
+  }
+}
+
+function refreshLeaderBoardMemberSearchState() {
+  const matches = findMemberMatchIndexes(sortedLeaderBoardScoreRows.value, leaderBoardMemberSearch.value);
+  leaderBoardMatchIndexes.value = matches;
+
+  if (matches.length === 0) {
+    activeLeaderBoardMatchPosition.value = -1;
+    return;
+  }
+
+  if (activeLeaderBoardMatchPosition.value < 0 || activeLeaderBoardMatchPosition.value >= matches.length) {
+    activeLeaderBoardMatchPosition.value = 0;
+  }
+}
+
+function setIndexedRowRef(target, rowIndex, element) {
+  if (element) {
+    target.value[rowIndex] = element;
+    return;
+  }
+
+  target.value[rowIndex] = null;
+}
+
+async function scrollToMatchedRow(rowRefs, rowIndex) {
+  await nextTick();
+
+  const rowElement = rowRefs.value[rowIndex];
+  if (!(rowElement instanceof HTMLElement)) {
+    return;
+  }
+
+  rowElement.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'nearest'
+  });
+}
+
+function visibleLeaderBoardRowRefs() {
+  return isMobileLeaderBoardsOnlyMode.value ? leaderBoardMobileRowRefs : leaderBoardDesktopRowRefs;
+}
+
+async function searchEventResultsMembers({ advance = false } = {}) {
+  const matches = findMemberMatchIndexes(sortedEventResultsRows.value, eventResultsMemberSearch.value);
+  eventResultsMatchIndexes.value = matches;
+
+  if (matches.length === 0) {
+    activeEventResultsMatchPosition.value = -1;
+    return;
+  }
+
+  activeEventResultsMatchPosition.value = advance && activeEventResultsMatchPosition.value >= 0
+    ? (activeEventResultsMatchPosition.value + 1) % matches.length
+    : 0;
+
+  await scrollToMatchedRow(eventResultsRowRefs, matches[activeEventResultsMatchPosition.value]);
+}
+
+async function searchLeaderBoardMembers({ advance = false } = {}) {
+  const matches = findMemberMatchIndexes(sortedLeaderBoardScoreRows.value, leaderBoardMemberSearch.value);
+  leaderBoardMatchIndexes.value = matches;
+
+  if (matches.length === 0) {
+    activeLeaderBoardMatchPosition.value = -1;
+    return;
+  }
+
+  activeLeaderBoardMatchPosition.value = advance && activeLeaderBoardMatchPosition.value >= 0
+    ? (activeLeaderBoardMatchPosition.value + 1) % matches.length
+    : 0;
+
+  await scrollToMatchedRow(visibleLeaderBoardRowRefs(), matches[activeLeaderBoardMatchPosition.value]);
+}
+
+function isEventResultsMatchedRow(rowIndex) {
+  return eventResultsMatchIndexes.value.includes(rowIndex);
+}
+
+function isActiveEventResultsMatchedRow(rowIndex) {
+  if (activeEventResultsMatchPosition.value < 0) {
+    return false;
+  }
+
+  return eventResultsMatchIndexes.value[activeEventResultsMatchPosition.value] === rowIndex;
+}
+
+function isLeaderBoardMatchedRow(rowIndex) {
+  return leaderBoardMatchIndexes.value.includes(rowIndex);
+}
+
+function isActiveLeaderBoardMatchedRow(rowIndex) {
+  if (activeLeaderBoardMatchPosition.value < 0) {
+    return false;
+  }
+
+  return leaderBoardMatchIndexes.value[activeLeaderBoardMatchPosition.value] === rowIndex;
+}
+
+function detectResultCategory(row) {
+  const rawValues = row?.raw || {};
+  const scaledValues = row?.scaled || {};
+
+  return fixedCategoryColumns.find((category) => {
+    const rawValue = Number(rawValues[category] ?? 0);
+    const scaledValue = Number(scaledValues[category] ?? 0);
+    return (Number.isFinite(rawValue) && rawValue !== 0) || (Number.isFinite(scaledValue) && scaledValue !== 0);
+  }) || '';
+}
+
 function sortEventResultsBy(column) {
   if (eventResultsSortColumn.value === column) {
     eventResultsSortDirection.value = eventResultsSortDirection.value === 'asc' ? 'desc' : 'asc';
@@ -994,6 +1180,9 @@ function closeLeaderBoardEventsDialog() {
 function resetLeaderBoardSelectionScreen() {
   activeLeaderBoard.value = null;
   leaderBoardScoresRows.value = [];
+  leaderBoardDesktopRowRefs.value = [];
+  leaderBoardMobileRowRefs.value = [];
+  resetLeaderBoardMemberSearch();
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresLoading.value = false;
 }
@@ -1356,6 +1545,7 @@ function openEditResultDialog(row) {
   editResultId.value = resultId;
   editResultTeamName.value = String(row?.team_name || '');
   editResultTeamMember.value = String(row?.team_member || '');
+  editResultCategory.value = String(row?.category || '');
   editResultErrorMessage.value = '';
   showEditResultDialog.value = true;
 }
@@ -1363,6 +1553,7 @@ function openEditResultDialog(row) {
 function closeEditResultDialog() {
   showEditResultDialog.value = false;
   editResultId.value = null;
+  editResultCategory.value = '';
   editResultErrorMessage.value = '';
 }
 
@@ -1384,11 +1575,17 @@ async function saveEditedResultRow() {
 
   const payload = {
     team_name: String(editResultTeamName.value || '').trim(),
-    team_member: String(editResultTeamMember.value || '').trim()
+    team_member: String(editResultTeamMember.value || '').trim(),
+    category: String(editResultCategory.value || '').trim().toUpperCase()
   };
 
   if (!payload.team_member) {
     editResultErrorMessage.value = 'Member is required.';
+    return;
+  }
+
+  if (!fixedCategoryColumns.includes(payload.category)) {
+    editResultErrorMessage.value = 'Category is required.';
     return;
   }
 
@@ -1504,6 +1701,8 @@ async function deleteSingleNameResultRows() {
 }
 
 watch(selectedResultsEventId, () => {
+  eventResultsRowRefs.value = [];
+  resetEventResultsMemberSearch();
   if (currentView.value === 'results') {
     loadSelectedEventResults();
   }
@@ -1577,6 +1776,9 @@ async function createLeaderBoardScoreView(leaderBoard, { historyMode } = {}) {
   }
 
   leaderBoardScoresRows.value = [];
+  leaderBoardDesktopRowRefs.value = [];
+  leaderBoardMobileRowRefs.value = [];
+  resetLeaderBoardMemberSearch();
   leaderBoardScoresErrorMessage.value = '';
   leaderBoardScoresShowRaw.value = false;
   leaderBoardScoresShowRank.value = false;
@@ -2646,6 +2848,20 @@ onBeforeUnmount(() => {
           <input v-model="showOnlyFlaggedResultMembers" type="checkbox" />
           Flagged only
         </label>
+        <label class="member-search-field">
+          <span>Member search</span>
+          <input
+            v-model="eventResultsMemberSearch"
+            type="text"
+            placeholder="Enter partial member name"
+            @keydown.enter.prevent="searchEventResultsMembers()"
+          />
+        </label>
+        <button type="button" class="secondary-button" @click="searchEventResultsMembers()" :disabled="eventResultsLoading || !eventResultsMemberSearch.trim()">Find</button>
+        <button type="button" class="secondary-button" @click="searchEventResultsMembers({ advance: true })" :disabled="eventResultsLoading || eventResultsMatchCount < 2">Next Match</button>
+        <span v-if="eventResultsMemberSearch.trim()" class="match-summary">
+          {{ eventResultsMatchCount > 0 ? `${eventResultsMatchCount} match${eventResultsMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
+        </span>
         <button
           v-if="isLoggedIn"
           type="button"
@@ -2674,7 +2890,15 @@ onBeforeUnmount(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, rowIndex) in sortedEventResultsRows" :key="`event-results-row-${row.id || rowIndex}`">
+          <tr
+            v-for="(row, rowIndex) in sortedEventResultsRows"
+            :key="`event-results-row-${row.id || rowIndex}`"
+            :ref="(element) => setIndexedRowRef(eventResultsRowRefs, rowIndex, element)"
+            :class="{
+              'search-match-row': isEventResultsMatchedRow(rowIndex),
+              'active-search-match-row': isActiveEventResultsMatchedRow(rowIndex)
+            }"
+          >
             <td
               v-for="column in eventResultsColumns"
               :key="`event-results-cell-${rowIndex}-${column}`"
@@ -2706,6 +2930,15 @@ onBeforeUnmount(() => {
           <label>
             Member
             <input v-model="editResultTeamMember" type="text" placeholder="Member name" />
+          </label>
+          <label>
+            Category
+            <select v-model="editResultCategory">
+              <option value="" disabled>Select category</option>
+              <option v-for="category in fixedCategoryColumns" :key="`edit-result-category-${category}`" :value="category">
+                {{ category }}
+              </option>
+            </select>
           </label>
         </div>
         <p v-if="editResultErrorMessage" class="error">{{ editResultErrorMessage }}</p>
@@ -2767,6 +3000,20 @@ onBeforeUnmount(() => {
               <input v-model="leaderBoardScoresShowRank" type="checkbox" />
               Rank
             </label>
+            <label class="member-search-field">
+              <span>Member search</span>
+              <input
+                v-model="leaderBoardMemberSearch"
+                type="text"
+                placeholder="Enter partial member name"
+                @keydown.enter.prevent="searchLeaderBoardMembers()"
+              />
+            </label>
+            <button type="button" class="secondary-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()">Find</button>
+            <button type="button" class="secondary-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2">Next Match</button>
+            <span v-if="leaderBoardMemberSearch.trim()" class="match-summary">
+              {{ leaderBoardMatchCount > 0 ? `${leaderBoardMatchCount} match${leaderBoardMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
+            </span>
           </div>
 
           <div v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="mobile-score-table-wrap">
@@ -2787,7 +3034,15 @@ onBeforeUnmount(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, rowIndex) in sortedLeaderBoardScoreRows" :key="`mobile-leader-board-score-row-${rowIndex}`">
+                <tr
+                  v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
+                  :key="`mobile-leader-board-score-row-${rowIndex}`"
+                  :ref="(element) => setIndexedRowRef(leaderBoardMobileRowRefs, rowIndex, element)"
+                  :class="{
+                    'search-match-row': isLeaderBoardMatchedRow(rowIndex),
+                    'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
+                  }"
+                >
                   <td
                     v-for="column in mobileLeaderBoardScoreColumns"
                     :key="`mobile-leader-board-score-cell-${rowIndex}-${column}`"
@@ -2890,6 +3145,20 @@ onBeforeUnmount(() => {
                 <input v-model="leaderBoardScoresShowRank" type="checkbox" />
                 Rank
               </label>
+              <label class="member-search-field">
+                <span>Member search</span>
+                <input
+                  v-model="leaderBoardMemberSearch"
+                  type="text"
+                  placeholder="Enter partial member name"
+                  @keydown.enter.prevent="searchLeaderBoardMembers()"
+                />
+              </label>
+              <button type="button" class="secondary-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()">Find</button>
+              <button type="button" class="secondary-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2">Next Match</button>
+              <span v-if="leaderBoardMemberSearch.trim()" class="match-summary">
+                {{ leaderBoardMatchCount > 0 ? `${leaderBoardMatchCount} match${leaderBoardMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
+              </span>
             </div>
 
             <table v-if="!leaderBoardScoresLoading && leaderBoardScoresRows.length > 0" class="events-table transformed-table leader-board-score-table">
@@ -2909,7 +3178,15 @@ onBeforeUnmount(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, rowIndex) in sortedLeaderBoardScoreRows" :key="`leader-board-score-row-${rowIndex}`">
+                <tr
+                  v-for="(row, rowIndex) in sortedLeaderBoardScoreRows"
+                  :key="`leader-board-score-row-${rowIndex}`"
+                  :ref="(element) => setIndexedRowRef(leaderBoardDesktopRowRefs, rowIndex, element)"
+                  :class="{
+                    'search-match-row': isLeaderBoardMatchedRow(rowIndex),
+                    'active-search-match-row': isActiveLeaderBoardMatchedRow(rowIndex)
+                  }"
+                >
                   <td
                     v-for="column in leaderBoardScoreColumns"
                     :key="`leader-board-score-cell-${rowIndex}-${column}`"
@@ -3458,6 +3735,18 @@ button.plain-button {
   @apply inline-flex items-center gap-1 text-sm font-medium text-slate-700;
 }
 
+.transformed-mode-switch .member-search-field {
+  @apply min-w-[240px] flex-col items-start gap-1;
+}
+
+.transformed-mode-switch .member-search-field input {
+  @apply min-w-[220px];
+}
+
+.match-summary {
+  @apply text-sm text-slate-600;
+}
+
 .events-table td.scaled-score-cell {
   @apply text-right;
 }
@@ -3479,6 +3768,14 @@ button.plain-button {
 
 .events-table td.result-member-warning {
   @apply font-semibold text-red-700;
+}
+
+.events-table tbody tr.search-match-row {
+  @apply bg-amber-50;
+}
+
+.events-table tbody tr.active-search-match-row {
+  @apply bg-amber-100 ring-1 ring-inset ring-amber-300;
 }
 
 .dialog-backdrop {
@@ -3632,6 +3929,14 @@ button.plain-button {
 
 .leader-board-score-table tbody tr:hover .sticky-member-column-cell {
   background-color: #eef2ff;
+}
+
+.leader-board-score-table tbody tr.search-match-row .sticky-member-column-cell {
+  background-color: #fef3c7;
+}
+
+.leader-board-score-table tbody tr.active-search-match-row .sticky-member-column-cell {
+  background-color: #fde68a;
 }
 
 .transformed-table {

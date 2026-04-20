@@ -15,6 +15,14 @@ function toNullableNumber(value) {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function detectResultCategory(row) {
+  return fixedCategoryColumns.find((category) => {
+    const rawValue = Number(row?.[`${category.toLowerCase()}_raw`] ?? 0);
+    const scaledValue = Number(row?.[`${category.toLowerCase()}_scaled`] ?? 0);
+    return (Number.isFinite(rawValue) && rawValue !== 0) || (Number.isFinite(scaledValue) && scaledValue !== 0);
+  }) || '';
+}
+
 async function ensureEventExists(eventId) {
   const [eventRows] = await pool.query(
     'SELECT id FROM events WHERE id = ? LIMIT 1',
@@ -162,6 +170,7 @@ router.put('/:eventId/results/:resultId', requireAuth, async (req, res) => {
   const resultId = Number(req.params.resultId);
   const teamName = String(req.body?.team_name || '').trim();
   const teamMember = String(req.body?.team_member || '').trim();
+  const category = String(req.body?.category || '').trim().toUpperCase();
 
   if (!Number.isInteger(eventId) || eventId <= 0) {
     return res.status(400).json({ message: 'eventId must be a positive integer' });
@@ -175,15 +184,79 @@ router.put('/:eventId/results/:resultId', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'team_member is required' });
   }
 
+  if (!fixedCategoryColumns.includes(category)) {
+    return res.status(400).json({ message: 'category must be one of the fixed category columns' });
+  }
+
   try {
+    const [existingRows] = await pool.query(
+      `SELECT
+         id,
+         mj_raw, mj_scaled,
+         sch_raw, sch_scaled,
+         wj_raw, wj_scaled,
+         xj_raw, xj_scaled,
+         mo_raw, mo_scaled,
+         wo_raw, wo_scaled,
+         xo_raw, xo_scaled,
+         mv_raw, mv_scaled,
+         wv_raw, wv_scaled,
+         xv_raw, xv_scaled,
+         msv_raw, msv_scaled,
+         wsv_raw, wsv_scaled,
+         xsv_raw, xsv_scaled,
+         muv_raw, muv_scaled,
+         wuv_raw, wuv_scaled,
+         xuv_raw, xuv_scaled
+       FROM results
+       WHERE id = ?
+         AND event_id = ?
+       LIMIT 1`,
+      [resultId, eventId]
+    );
+
+    const existingRow = existingRows[0];
+    if (!existingRow) {
+      return res.status(404).json({ message: 'Result row not found for this event.' });
+    }
+
+    const currentCategory = detectResultCategory(existingRow);
+    const categoryAssignments = [];
+    const queryValues = [teamName, teamMember];
+
+    for (const fixedCategory of fixedCategoryColumns) {
+      const rawColumn = `${fixedCategory.toLowerCase()}_raw`;
+      const scaledColumn = `${fixedCategory.toLowerCase()}_scaled`;
+      const rawValue = existingRow[rawColumn] ?? null;
+      const scaledValue = existingRow[scaledColumn] ?? null;
+
+      if (fixedCategory === category) {
+        const nextRawValue = currentCategory === category ? rawValue : (currentCategory ? existingRow[`${currentCategory.toLowerCase()}_raw`] ?? null : null);
+        const nextScaledValue = currentCategory === category ? scaledValue : (currentCategory ? existingRow[`${currentCategory.toLowerCase()}_scaled`] ?? null : null);
+        categoryAssignments.push(`${rawColumn} = ?`, `${scaledColumn} = ?`);
+        queryValues.push(nextRawValue, nextScaledValue);
+        continue;
+      }
+
+      if (fixedCategory === currentCategory && currentCategory !== category) {
+        categoryAssignments.push(`${rawColumn} = ?`, `${scaledColumn} = ?`);
+        queryValues.push(null, null);
+        continue;
+      }
+
+      categoryAssignments.push(`${rawColumn} = ?`, `${scaledColumn} = ?`);
+      queryValues.push(rawValue, scaledValue);
+    }
+
     const [result] = await pool.query(
       `UPDATE results
        SET
          team_name = ?,
-         team_member = ?
+         team_member = ?,
+         ${categoryAssignments.join(',\n         ')}
        WHERE id = ?
          AND event_id = ?`,
-      [teamName, teamMember, resultId, eventId]
+      [...queryValues, resultId, eventId]
     );
 
     if (!result?.affectedRows) {
