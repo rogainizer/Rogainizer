@@ -146,6 +146,8 @@ const eventResultsLoading = ref(false);
 const eventResultsErrorMessage = ref('');
 const eventResultsSuccessMessage = ref('');
 const eventResultsDisplayMode = ref('scaled');
+const eventResultsSortColumn = ref('final_score');
+const eventResultsSortDirection = ref('desc');
 const showOnlyFlaggedResultMembers = ref(false);
 const bulkDeleteSingleNameResultsLoading = ref(false);
 const showEditResultDialog = ref(false);
@@ -415,6 +417,26 @@ const filteredEventResultsRows = computed(() => {
   }
 
   return displayedEventResultsRows.value.filter((row) => shouldHighlightMemberName(row.team_member));
+});
+
+const sortedEventResultsRows = computed(() => {
+  const items = [...filteredEventResultsRows.value];
+  const sortColumn = eventResultsSortColumn.value;
+  const direction = eventResultsSortDirection.value === 'asc' ? 1 : -1;
+
+  items.sort((left, right) => {
+    if (isEventResultsTextColumn(sortColumn)) {
+      const leftValue = String(left[sortColumn] || '').toLowerCase();
+      const rightValue = String(right[sortColumn] || '').toLowerCase();
+      return leftValue.localeCompare(rightValue) * direction;
+    }
+
+    const leftValue = Number(left[sortColumn] ?? 0);
+    const rightValue = Number(right[sortColumn] ?? 0);
+    return (leftValue - rightValue) * direction;
+  });
+
+  return items;
 });
 
 const singleNameEventResultsCount = computed(() =>
@@ -773,6 +795,28 @@ function transformedColumnLabel(column) {
 
 function isLeaderBoardScoreColumn(column) {
   return column !== 'team_name' && column !== 'team_member';
+}
+
+function isEventResultsTextColumn(column) {
+  return column === 'team_name' || column === 'team_member';
+}
+
+function sortEventResultsBy(column) {
+  if (eventResultsSortColumn.value === column) {
+    eventResultsSortDirection.value = eventResultsSortDirection.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+
+  eventResultsSortColumn.value = column;
+  eventResultsSortDirection.value = isEventResultsTextColumn(column) ? 'asc' : 'desc';
+}
+
+function eventResultsSortIndicator(column) {
+  if (eventResultsSortColumn.value !== column) {
+    return '';
+  }
+
+  return eventResultsSortDirection.value === 'asc' ? ' ▲' : ' ▼';
 }
 
 function sortLeaderBoardScoresBy(column) {
@@ -2620,12 +2664,17 @@ onBeforeUnmount(() => {
       <table v-if="!eventResultsLoading && filteredEventResultsRows.length > 0" class="events-table transformed-table my-4 w-full border-collapse overflow-hidden rounded-lg bg-white">
         <thead>
           <tr>
-            <th v-for="column in eventResultsColumns" :key="`event-results-header-${column}`">{{ transformedColumnLabel(column) }}</th>
+            <th
+              v-for="column in eventResultsColumns"
+              :key="`event-results-header-${column}`"
+              class="sortable-header"
+              @click="sortEventResultsBy(column)"
+            >{{ transformedColumnLabel(column) }}{{ eventResultsSortIndicator(column) }}</th>
             <th v-if="isLoggedIn">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, rowIndex) in filteredEventResultsRows" :key="`event-results-row-${row.id || rowIndex}`">
+          <tr v-for="(row, rowIndex) in sortedEventResultsRows" :key="`event-results-row-${row.id || rowIndex}`">
             <td
               v-for="column in eventResultsColumns"
               :key="`event-results-cell-${rowIndex}-${column}`"
