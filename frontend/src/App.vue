@@ -916,6 +916,38 @@ function visibleLeaderBoardTableContainerRef() {
   return isMobileLeaderBoardsOnlyMode.value ? leaderBoardMobileTableContainerRef : leaderBoardDesktopTableContainerRef;
 }
 
+function getOffsetWithinAncestor(element, ancestor) {
+  let offset = 0;
+  let current = element;
+
+  while (current && current !== ancestor) {
+    offset += current.offsetTop;
+    current = current.offsetParent;
+  }
+
+  return offset;
+}
+
+function scrollPageToElementIfNeeded(element) {
+  if (!(element instanceof HTMLElement) || typeof window === 'undefined') {
+    return;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const topPadding = 96;
+
+  if (rect.top >= topPadding && rect.bottom <= viewportHeight) {
+    return;
+  }
+
+  const targetTop = window.scrollY + rect.top - topPadding;
+  window.scrollTo({
+    top: Math.max(targetTop, 0),
+    behavior: 'smooth'
+  });
+}
+
 async function scrollToMatchedRow(rowRefs, rowIndex, containerRef = null) {
   await nextTick();
 
@@ -929,23 +961,23 @@ async function scrollToMatchedRow(rowRefs, rowIndex, containerRef = null) {
     : rowElement.closest('.table-scroll-container');
 
   if (scrollContainer instanceof HTMLElement) {
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const rowRect = rowElement.getBoundingClientRect();
-    const currentScrollTop = scrollContainer.scrollTop;
-    const targetScrollTop = currentScrollTop + (rowRect.top - containerRect.top) - (containerRect.height / 2) + (rowRect.height / 2);
+    const rowOffsetTop = getOffsetWithinAncestor(rowElement, scrollContainer);
+    const targetScrollTop = rowOffsetTop - (scrollContainer.clientHeight / 2) + (rowElement.offsetHeight / 2);
     scrollContainer.scrollTo({
       top: Math.max(targetScrollTop, 0),
       behavior: 'smooth'
     });
 
-    const currentScrollLeft = scrollContainer.scrollLeft;
-    const targetScrollLeft = currentScrollLeft + (rowRect.left - containerRect.left) - 24;
-    if (Math.abs(targetScrollLeft - currentScrollLeft) > 1) {
+    const rowOffsetLeft = rowElement.offsetLeft;
+    const targetScrollLeft = rowOffsetLeft - 24;
+    if (Math.abs(targetScrollLeft - scrollContainer.scrollLeft) > 1) {
       scrollContainer.scrollTo({
         left: Math.max(targetScrollLeft, 0),
         behavior: 'smooth'
       });
     }
+
+    scrollPageToElementIfNeeded(scrollContainer);
     return;
   }
 
