@@ -2855,7 +2855,7 @@ onBeforeUnmount(() => {
           Flagged only
         </label>
         <label class="member-search-field">
-          <span>Member search</span>
+          <span class="member-search-label">Member search</span>
           <input
             v-model="eventResultsMemberSearch"
             type="text"
@@ -2863,9 +2863,15 @@ onBeforeUnmount(() => {
             @keydown.enter.prevent="searchEventResultsMembers()"
           />
         </label>
-        <button type="button" class="secondary-button" @click="searchEventResultsMembers()" :disabled="eventResultsLoading || !eventResultsMemberSearch.trim()">Find</button>
-        <button type="button" class="secondary-button" @click="searchEventResultsMembers({ advance: true })" :disabled="eventResultsLoading || eventResultsMatchCount < 2">Next Match</button>
-        <span v-if="eventResultsMemberSearch.trim()" class="match-summary">
+        <button type="button" class="secondary-button search-action-button" @click="searchEventResultsMembers()" :disabled="eventResultsLoading || !eventResultsMemberSearch.trim()" aria-label="Find member match">
+          <span class="search-action-text">Find</span>
+          <span class="search-action-icon" aria-hidden="true">⌕</span>
+        </button>
+        <button type="button" class="secondary-button search-action-button" @click="searchEventResultsMembers({ advance: true })" :disabled="eventResultsLoading || eventResultsMatchCount < 2" aria-label="Next member match">
+          <span class="search-action-text">Next Match</span>
+          <span class="search-action-icon" aria-hidden="true">↓</span>
+        </button>
+        <span v-if="eventResultsMemberSearch.trim()" class="match-summary desktop-match-summary">
           {{ eventResultsMatchCount > 0 ? `${eventResultsMatchCount} match${eventResultsMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
         </span>
         <button
@@ -3009,7 +3015,7 @@ onBeforeUnmount(() => {
               Rank
             </label>
             <label class="member-search-field">
-              <span>Member search</span>
+              <span class="member-search-label">Member search</span>
               <input
                 v-model="leaderBoardMemberSearch"
                 type="text"
@@ -3017,9 +3023,15 @@ onBeforeUnmount(() => {
                 @keydown.enter.prevent="searchLeaderBoardMembers()"
               />
             </label>
-            <button type="button" class="secondary-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()">Find</button>
-            <button type="button" class="secondary-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2">Next Match</button>
-            <span v-if="leaderBoardMemberSearch.trim()" class="match-summary">
+            <button type="button" class="secondary-button search-action-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()" aria-label="Find member match">
+              <span class="search-action-text">Find</span>
+              <span class="search-action-icon" aria-hidden="true">⌕</span>
+            </button>
+            <button type="button" class="secondary-button search-action-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2" aria-label="Next member match">
+              <span class="search-action-text">Next Match</span>
+              <span class="search-action-icon" aria-hidden="true">↓</span>
+            </button>
+            <span v-if="leaderBoardMemberSearch.trim()" class="match-summary desktop-match-summary">
               {{ leaderBoardMatchCount > 0 ? `${leaderBoardMatchCount} match${leaderBoardMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
             </span>
           </div>
@@ -3154,7 +3166,7 @@ onBeforeUnmount(() => {
                 Rank
               </label>
               <label class="member-search-field">
-                <span>Member search</span>
+                <span class="member-search-label">Member search</span>
                 <input
                   v-model="leaderBoardMemberSearch"
                   type="text"
@@ -3162,9 +3174,15 @@ onBeforeUnmount(() => {
                   @keydown.enter.prevent="searchLeaderBoardMembers()"
                 />
               </label>
-              <button type="button" class="secondary-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()">Find</button>
-              <button type="button" class="secondary-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2">Next Match</button>
-              <span v-if="leaderBoardMemberSearch.trim()" class="match-summary">
+              <button type="button" class="secondary-button search-action-button" @click="searchLeaderBoardMembers()" :disabled="leaderBoardScoresLoading || !leaderBoardMemberSearch.trim()" aria-label="Find member match">
+                <span class="search-action-text">Find</span>
+                <span class="search-action-icon" aria-hidden="true">⌕</span>
+              </button>
+              <button type="button" class="secondary-button search-action-button" @click="searchLeaderBoardMembers({ advance: true })" :disabled="leaderBoardScoresLoading || leaderBoardMatchCount < 2" aria-label="Next member match">
+                <span class="search-action-text">Next Match</span>
+                <span class="search-action-icon" aria-hidden="true">↓</span>
+              </button>
+              <span v-if="leaderBoardMemberSearch.trim()" class="match-summary desktop-match-summary">
                 {{ leaderBoardMatchCount > 0 ? `${leaderBoardMatchCount} match${leaderBoardMatchCount === 1 ? '' : 'es'}` : 'No matches' }}
               </span>
             </div>
@@ -3757,6 +3775,22 @@ button.plain-button {
   @apply min-w-[220px];
 }
 
+.member-search-label {
+  @apply inline;
+}
+
+.search-action-button {
+  @apply inline-flex items-center justify-center gap-1;
+}
+
+.search-action-icon {
+  @apply hidden;
+}
+
+.search-action-text {
+  @apply inline;
+}
+
 .match-summary {
   @apply text-sm text-slate-600;
 }
@@ -3969,6 +4003,35 @@ button.plain-button {
 
   .leader-boards-layout {
     grid-template-columns: minmax(300px, 0.33fr) minmax(0, 0.67fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .transformed-mode-switch {
+    @apply flex-nowrap gap-2 overflow-x-auto;
+  }
+
+  .transformed-mode-switch .member-search-field {
+    @apply min-w-0 flex-1;
+  }
+
+  .transformed-mode-switch .member-search-field input {
+    min-width: 0;
+    width: 8.5rem;
+  }
+
+  .member-search-label,
+  .desktop-match-summary,
+  .search-action-text {
+    display: none;
+  }
+
+  .search-action-icon {
+    display: inline;
+  }
+
+  .search-action-button {
+    @apply min-h-[2.25rem] min-w-[2.25rem] px-2;
   }
 }
 </style>
